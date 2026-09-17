@@ -2,13 +2,16 @@
 
 Chronotail is a dependency-free embedded time-series engine for strictly ordered timestamped data.
 
-## Frozen v1 boundaries
+## Version boundaries
 
-- Preserve `.ctdb` file format v6 and C ABI v1.
-- Preserve public Zig, C, Python, and CLI behavior within the v1 series.
+- Preserve `.ctdb` format v6 and C ABI v1 on the v1 maintenance line.
+- V2 uses format v7 and C ABI v2 on the `v2` branch; v6 is read only through
+  explicit migration and is never rewritten in place.
+- Preserve public Zig, C, Python, and CLI behavior within each stable major line.
 - Do not weaken checksums, structural validation, durability, recovery, or simulator invariants.
 - Do not add runtime dispatch or third-party runtime dependencies to production paths.
-- Version 1.0.0 supports macOS ARM64 only.
+- Version 1.0.0 supports macOS ARM64 only; v2 adds no platform claim without
+  native artifact validation.
 
 ## Engineering rules
 

@@ -1,3 +1,45 @@
+# Chronotail 2.0.0 — unreleased
+
+Chronotail v2 replaces the storage kernel with portable format v7 and C ABI v2.
+This branch is not a published release until the final release, simulator, and
+unchanged competitive benchmark gates complete.
+
+## V2 highlights
+
+- A fixed 64 KiB control region with an authenticated empty generation and four
+  rotating, checksummed root slots gives bounded recovery and fallbacks from
+  torn roots, including the first data publication.
+- Immutable columnar pages, externally authenticated pointers, per-series
+  copy-on-write indexes, and manifests replace format-v6 footer reconstruction.
+- Prepared series, persistent cursors, zero-copy raw-page views, aggregate
+  summaries, fixed-resolution windows, and bulk raw-column copies expand the
+  read data plane.
+- Caller-declared writer capacity and fixed reader bounds keep steady paths
+  allocation-free after preparation.
+- Explicit memory/disk durability uses data-sync-root-sync publication for the
+  durable case.
+- Format-v6 input is recognized and migrated into a separate v7 file through a
+  verified CLI/Zig tool; v6 is never silently rewritten.
+
+## Compatibility
+
+Format v7 and C ABI v2 are new major-version boundaries. Original C entry-point
+names remain source-level conveniences, but ABI-v1 binary compatibility is not
+claimed. The released v1.0.0 record below is preserved verbatim.
+
+## Validation status
+
+The internal ReleaseFast profile completed three repetitions of 179 workloads;
+all 24 measured steady-state allocation rows reported zero allocator activity.
+The deterministic simulator completed 1,000 seeds and 100,000,000 operations
+with zero invariant failures. Debug, ReleaseSafe, ReleaseFast, integration,
+formatting, documentation-link, release-policy, symbol, header, and isolated
+artifact gates pass. The unchanged public competitive benchmark remains the
+next separate run after branch handoff and is not represented as complete here.
+
+See [`docs/v2-performance-report.md`](docs/v2-performance-report.md) for the
+full internal evidence and disclosed regressions.
+
 # Chronotail 1.0.0
 
 Chronotail 1.0.0 is the first stable release of the embedded, append-only time-series engine.

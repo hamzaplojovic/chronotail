@@ -1,5 +1,10 @@
 # Chronotail competitive benchmarks
 
+> Historical v1.0.0 / format-v6 baseline. These numbers are not v2 evidence.
+> Reproduce them from tag `v1.0.0` (commit `3f86e83`); the current `v2` branch
+> writes format v7. V2 development measurements live in ignored internal
+> profiling results and its separate performance report.
+
 These are measured results, not copied vendor numbers. Raw output is in [`bench/results/20260917-105244/raw.jsonl`](bench/results/20260917-105244/raw.jsonl), the aggregate CSV is in [`summary.csv`](bench/results/20260917-105244/summary.csv), and every invocation is in [`commands.log`](bench/results/20260917-105244/commands.log).
 
 The TigerStyle mechanical model, architectural analysis, experiments, and safety evidence are in [`bench/results/tigerstyle/REPORT.md`](bench/results/tigerstyle/REPORT.md). The preceding profiler-guided pass remains archived under `bench/results/performance-pass/`.

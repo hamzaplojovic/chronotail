@@ -26,6 +26,10 @@ def load(path: Path) -> dict[tuple, list[dict]]:
                 row["series_count"],
                 row["batch_size"],
                 row["width"],
+                row["detail_a"]
+                if row["group"] == "control-plane"
+                and row["name"] == "recover-trailing-data"
+                else 0,
             )
             groups[key].append(row)
     return groups

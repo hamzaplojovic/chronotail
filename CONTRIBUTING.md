@@ -1,6 +1,9 @@
 # Contributing
 
-Chronotail keeps a deliberately small scope and a frozen v1 storage/ABI boundary. Start with `AGENTS.md`, `docs/architecture.md`, and the relevant API document.
+Chronotail keeps a deliberately small scope. Format v6/C ABI v1 remain frozen
+maintenance boundaries; format v7/C ABI v2 development follows the accepted
+[`v2` design](docs/plans/2026-09-17-v2-engine-design.md). Start with `AGENTS.md`,
+`docs/architecture.md`, and the relevant API document.
 
 ## Development setup
 
@@ -25,11 +28,16 @@ Use 1,000 seeds before a release.
 ## Change policy
 
 - Do not change format v6 or C ABI v1 in a normal v1 contribution.
+- Keep v6 support read-only and migration-only on v2; never silently rewrite a
+  v6 database in place.
 - Add a corruption or regression test before changing validation or recovery.
 - Keep production runtime dependencies at zero.
+- Keep post-open data paths allocation-free within explicit caller/format bounds.
 - Keep benchmark datasets, timing boundaries, and competitor settings unchanged.
 - Include focused before/after evidence for performance changes and retain changes only when correctness and measurement agree.
 - Keep generated databases, build output, profiles, vendor trees, and caches out of the repository.
+- Compare engine changes with the ignored internal v1 baseline before running
+  the frozen public competitive suite.
 
 ## Pull requests
 

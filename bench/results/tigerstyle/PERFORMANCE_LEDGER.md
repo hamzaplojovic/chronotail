@@ -1,5 +1,8 @@
 # TigerStyle performance ledger
 
+> Immutable v1/format-v6 experiment ledger. It is retained as evidence,
+> including rejected regressions, and is not a v2 benchmark record.
+
 The unchanged competitive baseline is `20260916-213249`. Diagnostic experiments below are explicitly not changes to competitive methodology. Rates are medians unless noted; host background load caused substantial absolute variance, so paired/alternating A/B results and latency distributions carry more weight than isolated runs.
 
 | Change | Mechanical hypothesis / resource | Before | After | Result | Decision |

@@ -4,40 +4,31 @@
 
 Chronotail stores multiple named series in one portable `.ctdb` file. It has no server, SQL layer, background threads, or runtime dependencies. One writer appends data while readers query immutable committed snapshots.
 
-> **v1.0.0** · file format **v6** · C ABI **v1** · macOS ARM64
+> **v2.0.0 development branch** · file format **v7** · C ABI **v2** · macOS ARM64
 
 <p align="center"><img src="docs/assets/architecture.png" alt="Chronotail architecture" width="900"></p>
 
 ## Why Chronotail
 
-- **Predictable storage:** fixed 64 KiB blocks, append-only checkpoints, bounded recovery.
-- **Fast reads:** mmap snapshots, prepared timestamp geometry, raw and compressed ranges.
-- **Safe failure model:** checksums, strict timestamp validation, crash recovery, independent verification.
+- **Predictable storage:** immutable 64 KiB columnar pages, copy-on-write indexes, and bounded root election.
+- **Fast reads:** mmap snapshots, prepared series, persistent cursors, raw-page views, and summary aggregates.
+- **Safe failure model:** BLAKE3 identities, strict semantic validation, rotating roots, and independent verification.
 - **Concurrent snapshots:** one writer and any number of readers without reader/writer locking.
-- **Small integration surface:** native Zig API, frozen C ABI, Python bindings, and a CLI.
-- **Portable database files:** format v6 uses explicit little-endian integer domains and no native structs.
+- **Small integration surface:** native Zig API, C ABI v2, Python bindings, a CLI, and no runtime dependencies.
+- **Portable database files:** format v7 uses explicit little-endian integer domains and no native structs.
 
 ## Install
 
-Download `chronotail-1.0.0-macos-aarch64.tar.gz` from the GitHub release, verify it with the accompanying `SHA256SUMS`, and extract it:
-
-```bash
-tar -xzf chronotail-1.0.0-macos-aarch64.tar.gz
-export PATH="$PWD/chronotail/bin:$PATH"
-```
-
-The archive contains the CLI, `libchronotail.a`, `libchronotail.dylib`, `chronotail.h`, API documentation, and a dependency-free Python wheel.
-
-```bash
-python3 -m pip install chronotail/python/*.whl
-```
-
-Development requires Zig 0.15.2:
+Chronotail v2 is under development on this branch. Build it with Zig 0.15.2:
 
 ```bash
 zig build -Doptimize=ReleaseFast
 zig build test
 ```
+
+The released v1.0.0 artifacts remain available for users who need the frozen
+format-v6/C-ABI-v1 line. V2 never rewrites a v6 database in place; use
+`chronotail migrate-v6 old.ctdb new.ctdb` to create and verify a separate v7 file.
 
 ## Quick start
 
@@ -69,7 +60,11 @@ with chronotail.Reader("metrics.ctdb") as db:
     print(db.range("cpu", 0, 2000))
 ```
 
-## Performance
+## V1 performance baseline
+
+These numbers are the immutable v1/format-v6 baseline, not v2 claims. The
+unchanged public competitive suite will be rerun only after the v2 internal
+profiling and release gates pass.
 
 The canonical v1 suite contains 225 measurements across Chronotail, NanoTS, and SQLite: 45 workload/engine groups, five repetitions each. All engines receive identical points, public APIs only are timed, results are consumed, and complete databases are validated.
 
@@ -102,17 +97,31 @@ The benchmark host carried unrelated background load. Same-run competitor ratios
 
 ## Durability and snapshots
 
-Chronotail is single-writer/multiple-reader. A checkpoint flushes pending blocks, appends a checksummed footer/trailer generation, and optionally calls `fsync`. A reader sees one immutable committed generation until `refresh()` adopts a newer complete checkpoint. Interrupted writes leave the previous generation readable; recovery scans for the newest valid trailer.
+Chronotail is single-writer/multiple-reader. A checkpoint writes immutable data
+pages, copy-on-write index nodes, and a manifest before publishing one of four
+checksummed root slots. Disk durability adds a sync before root publication and
+a second sync after it. A reader sees one immutable generation until
+`refresh()` adopts a newer complete root. Interrupted writes leave an older root
+readable, and recovery examines a fixed 64 KiB control region rather than an
+arbitrary file tail.
 
-Checksums detect damaged bytes. Verification additionally checks structural bounds, codecs, counts, footer chains, and strict timestamp order. Successful checksum validation is cached only while exact immutable block identity is preserved.
+External 128-bit BLAKE3 identities detect damaged or misdirected immutable
+objects. Verification also checks bounds, object kinds, index ordering,
+statistics, codecs, root succession, and strict timestamp order. A checksum
+establishes byte identity; it never replaces semantic validation.
 
 ## APIs
 
 - [Zig API](docs/api/zig.md)
-- [C ABI v1](docs/api/c.md)
+- [C ABI v2](docs/api/c.md)
 - [Python API](docs/api/python.md)
 - [Architecture](docs/architecture.md)
-- [Format and machine model](docs/performance/tigerstyle-machine-model.md)
+- [V2 design and status](docs/plans/2026-09-17-v2-engine-design.md)
+- [V2 one-line pitch](docs/v2-pitch.md)
+- [V2 rethink report](docs/v2-rethink-report.md)
+- [V2 internal performance report](docs/v2-performance-report.md)
+- [Further optimization targets](docs/v2-optimization-opportunities.md)
+- [V1 machine-model baseline](docs/performance/tigerstyle-machine-model.md)
 - [Release notes](RELEASE_NOTES.md)
 
 CLI commands:
@@ -122,6 +131,7 @@ chronotail append  <file.ctdb> <series> <timestamp> <value> [raw|compressed]
 chronotail range   <file.ctdb> <series> <start> <end>
 chronotail verify  <file.ctdb>
 chronotail inspect <file.ctdb>
+chronotail migrate-v6 <source.ctdb> <target.ctdb> [raw|compressed]
 ```
 
 `append` defaults to adaptive compression. The library APIs provide efficient batch append and caller-owned query buffers.
@@ -137,13 +147,22 @@ zig build simulator -Doptimize=ReleaseFast
 ./scripts/build-release.sh
 ```
 
-The deterministic simulator injects crashes, short writes, failed writes, truncation, and corruption into the same compile-time-specialized engine used in production. The final v1 campaign executed 100,000,000 operations over 1,000 seeds with zero invariant failures.
+The deterministic simulator injects crashes, short writes, failed writes,
+truncation, and corruption into the same compile-time-specialized engine used
+in production. The final v2 campaign executed 100,000,000 operations over 1,000
+seeds with 1,934 crashes, 1,876 short writes, 1,877 failed writes, 5,970
+truncations, 5,961 corruptions, 58,623 checkpoint/reopen cycles, and zero
+invariant failures.
 
-The release matrix is declared in `scripts/targets.sh`. Version 1.0.0 intentionally supports only macOS ARM64.
+The release matrix is declared in `scripts/targets.sh`. V2 remains validated on
+macOS ARM64 until additional target gates are completed.
 
 ## Scope
 
-Chronotail is deliberately not a distributed database, server, query language, mutable key/value store, or general analytics engine. It is optimized for strictly increasing timestamps, bounded append/checkpoint work, and time-range reads from local files.
+Chronotail is deliberately not a distributed database, server, query language,
+mutable key/value store, or general analytics engine. Format v7 gives immutable
+objects stable identities that a future replication layer can transfer and
+repair, but v2 itself remains an embedded local engine.
 
 ## License
 
