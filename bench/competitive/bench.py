@@ -576,7 +576,6 @@ def svg_document(title: str, description: str, height: int, body: str) -> str:
  .group {{ font-size: 15px; font-weight: 720; fill: #fbf8ff; }}
  .label {{ font-size: 13px; fill: #e9e0ef; }}
  .value {{ font-size: 13px; font-weight: 700; fill: #fbf8ff; }}
- .range {{ font-size: 11px; fill: #a997b8; }}
  .footer {{ font-size: 11px; fill: #a997b8; letter-spacing: .2px; }}
 </style>
 {body}
@@ -620,7 +619,6 @@ def grouped_chart(
                     f'<line x1="{low_x:.2f}" y1="{y + 11.5}" x2="{high_x:.2f}" y2="{y + 11.5}" stroke="#fbf8ff" stroke-width="2" opacity=".72"/>',
                     f'<circle cx="{bar_x + bar_width * value / maximum:.2f}" cy="{y + 11.5}" r="4" fill="#fbf8ff"/>',
                     f'<text class="value" x="972" y="{y + 18}">{html.escape(formatter(value))}</text>',
-                    f'<text class="range" x="1196" y="{y + 18}" text-anchor="end">{html.escape(formatter(low))}–{html.escape(formatter(high))}</text>',
                 ]
             )
             y += row_height
@@ -640,7 +638,7 @@ def overview_chart(path: pathlib.Path, summary: dict[tuple[str, str], dict[str, 
     rate_card("BATCH APPEND", "append-batch-4096", " records/s")
     rate_card("RANDOM POINT", "point-lookup-warm", " queries/s")
     rate_card("100-POINT RANGE", "range-100-raw-warm", " queries/s")
-    rate_card("FULL AGGREGATE", "aggregate-full-raw-warm", " queries/s")
+    rate_card("100-POINT AGGREGATE", "aggregate-100-raw-warm", " queries/s")
     rate_card("32 READERS", "concurrent-32-readers", " queries/s")
     storage = float(summary["storage-smooth-compressed", "chronotail"]["bytes_per_point"])
     cards.append(("COMPRESSED STORAGE", f"{storage:.2f} bytes/point", "smooth telemetry"))
@@ -749,7 +747,7 @@ def render_report(out: pathlib.Path, prefix: str, summary_rows: list[dict[str, o
 - **Batch append:** {format_rate(float(summary['append-batch-4096','chronotail']['operations_per_sec']))} records/s; {ratio_text(summary, 'append-batch-4096')} under the no-sync workload.
 - **Random point lookup:** {format_rate(float(summary['point-lookup-warm','chronotail']['operations_per_sec']))} queries/s; {ratio_text(summary, 'point-lookup-warm')}.
 - **Raw 100-point range:** {format_rate(float(summary['range-100-raw-warm','chronotail']['operations_per_sec']))} queries/s; {ratio_text(summary, 'range-100-raw-warm')}.
-- **Full-series aggregate:** {format_rate(float(summary['aggregate-full-raw-warm','chronotail']['operations_per_sec']))} queries/s; {ratio_text(summary, 'aggregate-full-raw-warm')}.
+- **Raw 100-point aggregate:** {format_rate(float(summary['aggregate-100-raw-warm','chronotail']['operations_per_sec']))} queries/s; {ratio_text(summary, 'aggregate-100-raw-warm')}.
 - **32-reader throughput while writing:** {format_rate(float(summary['concurrent-32-readers','chronotail']['operations_per_sec']))} queries/s; {ratio_text(summary, 'concurrent-32-readers')}.
 - **Compressed smooth storage:** {float(summary['storage-smooth-compressed','chronotail']['bytes_per_point']):.3f} bytes/point.
 
@@ -798,6 +796,8 @@ Raw rows are equivalent cross-engine workloads. Chronotail compressed rows are a
 {summary_table(summary, aggregate_workloads)}
 
 Every engine computes count, minimum, maximum, sum, first, and last over the same inclusive range. Chronotail uses its public persisted-summary API, SQLite uses public SQL aggregates plus indexed first/last subqueries, and NanoTS scans its public iterator.
+
+The full-series rows execute 100 calls so the scanning engines remain practical. Chronotail answers that case from a persisted series summary, making its measured interval only a few microseconds and therefore sensitive to timer and loop overhead. Treat those rows as evidence of the bounded summary path, not as a hardware-throughput headline; the overview uses the 100-point aggregate measured over 100,000 calls.
 
 ## Concurrent readers and writer
 

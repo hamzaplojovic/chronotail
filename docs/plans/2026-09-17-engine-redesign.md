@@ -1,6 +1,6 @@
-# Chronotail v2 engine design
+# Chronotail engine redesign
 
-Status: accepted for implementation on the `v2` branch.
+Status: implemented as Chronotail 2.0.0 on the `v2` development branch.
 
 ## Implementation status — 2026-09-17
 
@@ -39,9 +39,12 @@ Implementation evidence is complete: the full three-pass internal candidate
 profile covers 179 workloads, all eight measured steady-state paths report zero
 allocator activity, all release verification modes pass, and the extended
 simulator completed 1,000 seeds and 100,000,000 operations with zero invariant
-failures. See the [internal performance report](../v2-performance-report.md).
-The unchanged public competitive benchmark is intentionally the next separate
-run after handoff. No public v2 performance claim is made by this plan.
+failures. See the [internal performance profile](../performance/internal-profile.md).
+The public competitive benchmark ran only after implementation and internal
+profiling were complete. It retains the original matrix first, adds broader
+public-API coverage, and is published separately in
+[`BENCHMARKS.md`](../../BENCHMARKS.md); competitor results did not guide the
+engine design.
 
 The remainder of this document preserves the accepted pre-implementation design
 record. Where it differs from the implementation, the status and deliberate
@@ -158,7 +161,7 @@ Each storage milestone requires:
   simulation using the production-specialized engine;
 - v6-to-v7 migration comparison over raw and compressed fixtures;
 - the internal performance matrix compared against the saved v1 baseline;
-- the unchanged public competitive benchmark only after v2 is complete.
+- the public competitive benchmark only after the engine redesign is complete.
 
 No change is retained if it weakens a safety invariant or hides a measured
 regression without an explicit, documented architectural tradeoff.

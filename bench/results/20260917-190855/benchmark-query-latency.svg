@@ -1,0 +1,136 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1240" height="998"
+ viewBox="0 0 1240 998" role="img" aria-labelledby="title desc">
+<title id="title">Warm query latency</title>
+<desc id="desc">p50 and p99 call latency; lower is better</desc>
+<defs>
+ <linearGradient id="accent" x1="0" x2="1"><stop stop-color="#ff6ac1"/><stop offset="0.48" stop-color="#b89cff"/><stop offset="1" stop-color="#c9ff4a"/></linearGradient>
+</defs>
+<rect width="1240" height="998" rx="18" fill="#1d1027"/>
+<rect width="1240" height="5" rx="2.5" fill="url(#accent)"/>
+<style>
+ text { font-family: Inter, ui-sans-serif, system-ui, -apple-system, sans-serif; fill: #fbf8ff; }
+ .title { font-size: 27px; font-weight: 750; letter-spacing: -.4px; }
+ .subtitle { font-size: 14px; fill: #cdbfd8; }
+ .group { font-size: 15px; font-weight: 720; fill: #fbf8ff; }
+ .label { font-size: 13px; fill: #e9e0ef; }
+ .value { font-size: 13px; font-weight: 700; fill: #fbf8ff; }
+ .footer { font-size: 11px; fill: #a997b8; letter-spacing: .2px; }
+</style>
+<text class="title" x="32" y="40">Warm query latency</text>
+<text class="subtitle" x="32" y="66">p50 and p99 call latency; lower is better</text>
+<text class="group" x="32" y="98">1-point raw range · p50</text>
+<text class="label" x="48" y="143">chronotail</text>
+<rect x="300" y="125" width="650" height="23" rx="5" fill="#2c1938" stroke="#4b315a"/>
+<rect x="300" y="125" width="71.17" height="23" rx="5" fill="#c9ff4a" fill-opacity=".78"/>
+<line x1="371.17" y1="136.5" x2="371.17" y2="136.5" stroke="#fbf8ff" stroke-width="2" opacity=".72"/>
+<circle cx="371.17" cy="136.5" r="4" fill="#fbf8ff"/>
+<text class="value" x="972" y="143">0.292 µs</text>
+<text class="label" x="48" y="175">nanots</text>
+<rect x="300" y="157" width="650" height="23" rx="5" fill="#2c1938" stroke="#4b315a"/>
+<rect x="300" y="157" width="152.32" height="23" rx="5" fill="#b89cff" fill-opacity=".78"/>
+<line x1="452.32" y1="168.5" x2="452.32" y2="168.5" stroke="#fbf8ff" stroke-width="2" opacity=".72"/>
+<circle cx="452.32" cy="168.5" r="4" fill="#fbf8ff"/>
+<text class="value" x="972" y="175">0.625 µs</text>
+<text class="label" x="48" y="207">sqlite</text>
+<rect x="300" y="189" width="650" height="23" rx="5" fill="#2c1938" stroke="#4b315a"/>
+<rect x="300" y="189" width="650.00" height="23" rx="5" fill="#51e1e8" fill-opacity=".78"/>
+<line x1="950.00" y1="200.5" x2="950.00" y2="200.5" stroke="#fbf8ff" stroke-width="2" opacity=".72"/>
+<circle cx="950.00" cy="200.5" r="4" fill="#fbf8ff"/>
+<text class="value" x="972" y="207">2.667 µs</text>
+<text class="group" x="32" y="245">1-point raw range · p99</text>
+<text class="label" x="48" y="290">chronotail</text>
+<rect x="300" y="272" width="650" height="23" rx="5" fill="#2c1938" stroke="#4b315a"/>
+<rect x="300" y="272" width="141.83" height="23" rx="5" fill="#c9ff4a" fill-opacity=".78"/>
+<line x1="441.83" y1="283.5" x2="441.83" y2="283.5" stroke="#fbf8ff" stroke-width="2" opacity=".72"/>
+<circle cx="441.83" cy="283.5" r="4" fill="#fbf8ff"/>
+<text class="value" x="972" y="290">0.791 µs</text>
+<text class="label" x="48" y="322">nanots</text>
+<rect x="300" y="304" width="650" height="23" rx="5" fill="#2c1938" stroke="#4b315a"/>
+<rect x="300" y="304" width="321.14" height="23" rx="5" fill="#b89cff" fill-opacity=".78"/>
+<line x1="621.14" y1="315.5" x2="621.14" y2="315.5" stroke="#fbf8ff" stroke-width="2" opacity=".72"/>
+<circle cx="621.14" cy="315.5" r="4" fill="#fbf8ff"/>
+<text class="value" x="972" y="322">1.791 µs</text>
+<text class="label" x="48" y="354">sqlite</text>
+<rect x="300" y="336" width="650" height="23" rx="5" fill="#2c1938" stroke="#4b315a"/>
+<rect x="300" y="336" width="650.00" height="23" rx="5" fill="#51e1e8" fill-opacity=".78"/>
+<line x1="950.00" y1="347.5" x2="950.00" y2="347.5" stroke="#fbf8ff" stroke-width="2" opacity=".72"/>
+<circle cx="950.00" cy="347.5" r="4" fill="#fbf8ff"/>
+<text class="value" x="972" y="354">3.625 µs</text>
+<text class="group" x="32" y="392">100-point raw range · p50</text>
+<text class="label" x="48" y="437">chronotail</text>
+<rect x="300" y="419" width="650" height="23" rx="5" fill="#2c1938" stroke="#4b315a"/>
+<rect x="300" y="419" width="32.64" height="23" rx="5" fill="#c9ff4a" fill-opacity=".78"/>
+<line x1="332.64" y1="430.5" x2="332.64" y2="430.5" stroke="#fbf8ff" stroke-width="2" opacity=".72"/>
+<circle cx="332.64" cy="430.5" r="4" fill="#fbf8ff"/>
+<text class="value" x="972" y="437">0.500 µs</text>
+<text class="label" x="48" y="469">nanots</text>
+<rect x="300" y="451" width="650" height="23" rx="5" fill="#2c1938" stroke="#4b315a"/>
+<rect x="300" y="451" width="611.95" height="23" rx="5" fill="#b89cff" fill-opacity=".78"/>
+<line x1="911.95" y1="462.5" x2="911.95" y2="462.5" stroke="#fbf8ff" stroke-width="2" opacity=".72"/>
+<circle cx="911.95" cy="462.5" r="4" fill="#fbf8ff"/>
+<text class="value" x="972" y="469">9.375 µs</text>
+<text class="label" x="48" y="501">sqlite</text>
+<rect x="300" y="483" width="650" height="23" rx="5" fill="#2c1938" stroke="#4b315a"/>
+<rect x="300" y="483" width="650.00" height="23" rx="5" fill="#51e1e8" fill-opacity=".78"/>
+<line x1="950.00" y1="494.5" x2="950.00" y2="494.5" stroke="#fbf8ff" stroke-width="2" opacity=".72"/>
+<circle cx="950.00" cy="494.5" r="4" fill="#fbf8ff"/>
+<text class="value" x="972" y="501">9.958 µs</text>
+<text class="group" x="32" y="539">100-point raw range · p99</text>
+<text class="label" x="48" y="584">chronotail</text>
+<rect x="300" y="566" width="650" height="23" rx="5" fill="#2c1938" stroke="#4b315a"/>
+<rect x="300" y="566" width="63.36" height="23" rx="5" fill="#c9ff4a" fill-opacity=".78"/>
+<line x1="363.36" y1="577.5" x2="363.36" y2="577.5" stroke="#fbf8ff" stroke-width="2" opacity=".72"/>
+<circle cx="363.36" cy="577.5" r="4" fill="#fbf8ff"/>
+<text class="value" x="972" y="584">1.125 µs</text>
+<text class="label" x="48" y="616">nanots</text>
+<rect x="300" y="598" width="650" height="23" rx="5" fill="#2c1938" stroke="#4b315a"/>
+<rect x="300" y="598" width="650.00" height="23" rx="5" fill="#b89cff" fill-opacity=".78"/>
+<line x1="950.00" y1="609.5" x2="950.00" y2="609.5" stroke="#fbf8ff" stroke-width="2" opacity=".72"/>
+<circle cx="950.00" cy="609.5" r="4" fill="#fbf8ff"/>
+<text class="value" x="972" y="616">11.541 µs</text>
+<text class="label" x="48" y="648">sqlite</text>
+<rect x="300" y="630" width="650" height="23" rx="5" fill="#2c1938" stroke="#4b315a"/>
+<rect x="300" y="630" width="647.69" height="23" rx="5" fill="#51e1e8" fill-opacity=".78"/>
+<line x1="947.69" y1="641.5" x2="947.69" y2="641.5" stroke="#fbf8ff" stroke-width="2" opacity=".72"/>
+<circle cx="947.69" cy="641.5" r="4" fill="#fbf8ff"/>
+<text class="value" x="972" y="648">11.500 µs</text>
+<text class="group" x="32" y="686">10,000-point raw range · p50</text>
+<text class="label" x="48" y="731">chronotail</text>
+<rect x="300" y="713" width="650" height="23" rx="5" fill="#2c1938" stroke="#4b315a"/>
+<rect x="300" y="713" width="4.49" height="23" rx="5" fill="#c9ff4a" fill-opacity=".78"/>
+<line x1="304.49" y1="724.5" x2="304.49" y2="724.5" stroke="#fbf8ff" stroke-width="2" opacity=".72"/>
+<circle cx="304.49" cy="724.5" r="4" fill="#fbf8ff"/>
+<text class="value" x="972" y="731">5.959 µs</text>
+<text class="label" x="48" y="763">nanots</text>
+<rect x="300" y="745" width="650" height="23" rx="5" fill="#2c1938" stroke="#4b315a"/>
+<rect x="300" y="745" width="650.00" height="23" rx="5" fill="#b89cff" fill-opacity=".78"/>
+<line x1="950.00" y1="756.5" x2="950.00" y2="756.5" stroke="#fbf8ff" stroke-width="2" opacity=".72"/>
+<circle cx="950.00" cy="756.5" r="4" fill="#fbf8ff"/>
+<text class="value" x="972" y="763">862.459 µs</text>
+<text class="label" x="48" y="795">sqlite</text>
+<rect x="300" y="777" width="650" height="23" rx="5" fill="#2c1938" stroke="#4b315a"/>
+<rect x="300" y="777" width="551.46" height="23" rx="5" fill="#51e1e8" fill-opacity=".78"/>
+<line x1="851.46" y1="788.5" x2="851.46" y2="788.5" stroke="#fbf8ff" stroke-width="2" opacity=".72"/>
+<circle cx="851.46" cy="788.5" r="4" fill="#fbf8ff"/>
+<text class="value" x="972" y="795">731.708 µs</text>
+<text class="group" x="32" y="833">10,000-point raw range · p99</text>
+<text class="label" x="48" y="878">chronotail</text>
+<rect x="300" y="860" width="650" height="23" rx="5" fill="#2c1938" stroke="#4b315a"/>
+<rect x="300" y="860" width="73.86" height="23" rx="5" fill="#c9ff4a" fill-opacity=".78"/>
+<line x1="373.86" y1="871.5" x2="373.86" y2="871.5" stroke="#fbf8ff" stroke-width="2" opacity=".72"/>
+<circle cx="373.86" cy="871.5" r="4" fill="#fbf8ff"/>
+<text class="value" x="972" y="878">106.000 µs</text>
+<text class="label" x="48" y="910">nanots</text>
+<rect x="300" y="892" width="650" height="23" rx="5" fill="#2c1938" stroke="#4b315a"/>
+<rect x="300" y="892" width="650.00" height="23" rx="5" fill="#b89cff" fill-opacity=".78"/>
+<line x1="950.00" y1="903.5" x2="950.00" y2="903.5" stroke="#fbf8ff" stroke-width="2" opacity=".72"/>
+<circle cx="950.00" cy="903.5" r="4" fill="#fbf8ff"/>
+<text class="value" x="972" y="910">932.792 µs</text>
+<text class="label" x="48" y="942">sqlite</text>
+<rect x="300" y="924" width="650" height="23" rx="5" fill="#2c1938" stroke="#4b315a"/>
+<rect x="300" y="924" width="560.60" height="23" rx="5" fill="#51e1e8" fill-opacity=".78"/>
+<line x1="860.60" y1="935.5" x2="860.60" y2="935.5" stroke="#fbf8ff" stroke-width="2" opacity=".72"/>
+<circle cx="860.60" cy="935.5" r="4" fill="#fbf8ff"/>
+<text class="value" x="972" y="942">804.500 µs</text>
+<text class="footer" x="32" y="976">Run 20260917-190855 · five-run median latency</text>
+</svg>

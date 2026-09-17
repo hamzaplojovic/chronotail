@@ -1,0 +1,97 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1240" height="653"
+ viewBox="0 0 1240 653" role="img" aria-labelledby="title desc">
+<title id="title">Aggregate throughput</title>
+<desc id="desc">count/min/max/sum/first/last; each width has its own scale</desc>
+<defs>
+ <linearGradient id="accent" x1="0" x2="1"><stop stop-color="#ff6ac1"/><stop offset="0.48" stop-color="#b89cff"/><stop offset="1" stop-color="#c9ff4a"/></linearGradient>
+</defs>
+<rect width="1240" height="653" rx="18" fill="#1d1027"/>
+<rect width="1240" height="5" rx="2.5" fill="url(#accent)"/>
+<style>
+ text { font-family: Inter, ui-sans-serif, system-ui, -apple-system, sans-serif; fill: #fbf8ff; }
+ .title { font-size: 27px; font-weight: 750; letter-spacing: -.4px; }
+ .subtitle { font-size: 14px; fill: #cdbfd8; }
+ .group { font-size: 15px; font-weight: 720; fill: #fbf8ff; }
+ .label { font-size: 13px; fill: #e9e0ef; }
+ .value { font-size: 13px; font-weight: 700; fill: #fbf8ff; }
+ .footer { font-size: 11px; fill: #a997b8; letter-spacing: .2px; }
+</style>
+<text class="title" x="32" y="40">Aggregate throughput</text>
+<text class="subtitle" x="32" y="66">count/min/max/sum/first/last; each width has its own scale</text>
+<text class="group" x="32" y="98">100 points</text>
+<text class="label" x="48" y="143">chronotail</text>
+<rect x="300" y="125" width="650" height="23" rx="5" fill="#2c1938" stroke="#4b315a"/>
+<rect x="300" y="125" width="574.76" height="23" rx="5" fill="#c9ff4a" fill-opacity=".78"/>
+<line x1="720.11" y1="136.5" x2="950.00" y2="136.5" stroke="#fbf8ff" stroke-width="2" opacity=".72"/>
+<circle cx="874.76" cy="136.5" r="4" fill="#fbf8ff"/>
+<text class="value" x="972" y="143">355.31k queries/s</text>
+<text class="label" x="48" y="175">nanots</text>
+<rect x="300" y="157" width="650" height="23" rx="5" fill="#2c1938" stroke="#4b315a"/>
+<rect x="300" y="157" width="170.53" height="23" rx="5" fill="#b89cff" fill-opacity=".78"/>
+<line x1="433.32" y1="168.5" x2="475.84" y2="168.5" stroke="#fbf8ff" stroke-width="2" opacity=".72"/>
+<circle cx="470.53" cy="168.5" r="4" fill="#fbf8ff"/>
+<text class="value" x="972" y="175">105.42k queries/s</text>
+<text class="label" x="48" y="207">sqlite</text>
+<rect x="300" y="189" width="650" height="23" rx="5" fill="#2c1938" stroke="#4b315a"/>
+<rect x="300" y="189" width="129.00" height="23" rx="5" fill="#51e1e8" fill-opacity=".78"/>
+<line x1="402.06" y1="200.5" x2="433.52" y2="200.5" stroke="#fbf8ff" stroke-width="2" opacity=".72"/>
+<circle cx="429.00" cy="200.5" r="4" fill="#fbf8ff"/>
+<text class="value" x="972" y="207">79.75k queries/s</text>
+<text class="label" x="48" y="239">chronotail compressed</text>
+<rect x="300" y="221" width="650" height="23" rx="5" fill="#2c1938" stroke="#4b315a"/>
+<rect x="300" y="221" width="570.01" height="23" rx="5" fill="#c9ff4a" fill-opacity=".78"/>
+<line x1="670.67" y1="232.5" x2="891.24" y2="232.5" stroke="#fbf8ff" stroke-width="2" opacity=".72"/>
+<circle cx="870.01" cy="232.5" r="4" fill="#fbf8ff"/>
+<text class="value" x="972" y="239">352.38k queries/s</text>
+<text class="group" x="32" y="277">10,000 points</text>
+<text class="label" x="48" y="322">chronotail</text>
+<rect x="300" y="304" width="650" height="23" rx="5" fill="#2c1938" stroke="#4b315a"/>
+<rect x="300" y="304" width="624.83" height="23" rx="5" fill="#c9ff4a" fill-opacity=".78"/>
+<line x1="920.06" y1="315.5" x2="950.00" y2="315.5" stroke="#fbf8ff" stroke-width="2" opacity=".72"/>
+<circle cx="924.83" cy="315.5" r="4" fill="#fbf8ff"/>
+<text class="value" x="972" y="322">77.41k queries/s</text>
+<text class="label" x="48" y="354">nanots</text>
+<rect x="300" y="336" width="650" height="23" rx="5" fill="#2c1938" stroke="#4b315a"/>
+<rect x="300" y="336" width="9.28" height="23" rx="5" fill="#b89cff" fill-opacity=".78"/>
+<line x1="308.84" y1="347.5" x2="309.53" y2="347.5" stroke="#fbf8ff" stroke-width="2" opacity=".72"/>
+<circle cx="309.28" cy="347.5" r="4" fill="#fbf8ff"/>
+<text class="value" x="972" y="354">1.15k queries/s</text>
+<text class="label" x="48" y="386">sqlite</text>
+<rect x="300" y="368" width="650" height="23" rx="5" fill="#2c1938" stroke="#4b315a"/>
+<rect x="300" y="368" width="9.73" height="23" rx="5" fill="#51e1e8" fill-opacity=".78"/>
+<line x1="309.44" y1="379.5" x2="309.95" y2="379.5" stroke="#fbf8ff" stroke-width="2" opacity=".72"/>
+<circle cx="309.73" cy="379.5" r="4" fill="#fbf8ff"/>
+<text class="value" x="972" y="386">1.21k queries/s</text>
+<text class="label" x="48" y="418">chronotail compressed</text>
+<rect x="300" y="400" width="650" height="23" rx="5" fill="#2c1938" stroke="#4b315a"/>
+<rect x="300" y="400" width="381.58" height="23" rx="5" fill="#c9ff4a" fill-opacity=".78"/>
+<line x1="650.26" y1="411.5" x2="691.57" y2="411.5" stroke="#fbf8ff" stroke-width="2" opacity=".72"/>
+<circle cx="681.58" cy="411.5" r="4" fill="#fbf8ff"/>
+<text class="value" x="972" y="418">47.27k queries/s</text>
+<text class="group" x="32" y="456">full series</text>
+<text class="label" x="48" y="501">chronotail</text>
+<rect x="300" y="483" width="650" height="23" rx="5" fill="#2c1938" stroke="#4b315a"/>
+<rect x="300" y="483" width="578.50" height="23" rx="5" fill="#c9ff4a" fill-opacity=".78"/>
+<line x1="731.41" y1="494.5" x2="937.58" y2="494.5" stroke="#fbf8ff" stroke-width="2" opacity=".72"/>
+<circle cx="878.50" cy="494.5" r="4" fill="#fbf8ff"/>
+<text class="value" x="972" y="501">13.87M queries/s</text>
+<text class="label" x="48" y="533">nanots</text>
+<rect x="300" y="515" width="650" height="23" rx="5" fill="#2c1938" stroke="#4b315a"/>
+<rect x="300" y="515" width="3.00" height="23" rx="5" fill="#b89cff" fill-opacity=".78"/>
+<line x1="300.00" y1="526.5" x2="300.00" y2="526.5" stroke="#fbf8ff" stroke-width="2" opacity=".72"/>
+<circle cx="300.00" cy="526.5" r="4" fill="#fbf8ff"/>
+<text class="value" x="972" y="533">11.53 queries/s</text>
+<text class="label" x="48" y="565">sqlite</text>
+<rect x="300" y="547" width="650" height="23" rx="5" fill="#2c1938" stroke="#4b315a"/>
+<rect x="300" y="547" width="3.00" height="23" rx="5" fill="#51e1e8" fill-opacity=".78"/>
+<line x1="300.00" y1="558.5" x2="300.00" y2="558.5" stroke="#fbf8ff" stroke-width="2" opacity=".72"/>
+<circle cx="300.00" cy="558.5" r="4" fill="#fbf8ff"/>
+<text class="value" x="972" y="565">11.92 queries/s</text>
+<text class="label" x="48" y="597">chronotail compressed</text>
+<rect x="300" y="579" width="650" height="23" rx="5" fill="#2c1938" stroke="#4b315a"/>
+<rect x="300" y="579" width="629.49" height="23" rx="5" fill="#c9ff4a" fill-opacity=".78"/>
+<line x1="795.47" y1="590.5" x2="950.00" y2="590.5" stroke="#fbf8ff" stroke-width="2" opacity=".72"/>
+<circle cx="929.49" cy="590.5" r="4" fill="#fbf8ff"/>
+<text class="value" x="972" y="597">15.09M queries/s</text>
+<text class="footer" x="32" y="631">Run 20260917-190855 · median bar · min–max whisker · five repetitions</text>
+</svg>

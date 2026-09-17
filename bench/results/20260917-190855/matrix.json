@@ -1,0 +1,404 @@
+{
+  "schema": 2,
+  "repetitions": 5,
+  "group_count": 99,
+  "result_count": 495,
+  "groups": [
+    {
+      "workload": "aggregate-100-compressed-warm",
+      "engine": "chronotail"
+    },
+    {
+      "workload": "aggregate-100-raw-warm",
+      "engine": "chronotail"
+    },
+    {
+      "workload": "aggregate-100-raw-warm",
+      "engine": "nanots"
+    },
+    {
+      "workload": "aggregate-100-raw-warm",
+      "engine": "sqlite"
+    },
+    {
+      "workload": "aggregate-10000-compressed-warm",
+      "engine": "chronotail"
+    },
+    {
+      "workload": "aggregate-10000-raw-warm",
+      "engine": "chronotail"
+    },
+    {
+      "workload": "aggregate-10000-raw-warm",
+      "engine": "nanots"
+    },
+    {
+      "workload": "aggregate-10000-raw-warm",
+      "engine": "sqlite"
+    },
+    {
+      "workload": "aggregate-full-compressed-warm",
+      "engine": "chronotail"
+    },
+    {
+      "workload": "aggregate-full-raw-warm",
+      "engine": "chronotail"
+    },
+    {
+      "workload": "aggregate-full-raw-warm",
+      "engine": "nanots"
+    },
+    {
+      "workload": "aggregate-full-raw-warm",
+      "engine": "sqlite"
+    },
+    {
+      "workload": "append-8-series",
+      "engine": "chronotail"
+    },
+    {
+      "workload": "append-8-series",
+      "engine": "nanots"
+    },
+    {
+      "workload": "append-8-series",
+      "engine": "sqlite"
+    },
+    {
+      "workload": "append-A-none",
+      "engine": "chronotail"
+    },
+    {
+      "workload": "append-A-none",
+      "engine": "nanots"
+    },
+    {
+      "workload": "append-A-none",
+      "engine": "sqlite"
+    },
+    {
+      "workload": "append-B-10MiB",
+      "engine": "chronotail"
+    },
+    {
+      "workload": "append-B-10MiB",
+      "engine": "nanots"
+    },
+    {
+      "workload": "append-B-10MiB",
+      "engine": "sqlite"
+    },
+    {
+      "workload": "append-C-1MiB",
+      "engine": "chronotail"
+    },
+    {
+      "workload": "append-C-1MiB",
+      "engine": "nanots"
+    },
+    {
+      "workload": "append-C-1MiB",
+      "engine": "sqlite"
+    },
+    {
+      "workload": "append-batch-4096",
+      "engine": "chronotail"
+    },
+    {
+      "workload": "append-batch-4096",
+      "engine": "nanots"
+    },
+    {
+      "workload": "append-batch-4096",
+      "engine": "sqlite"
+    },
+    {
+      "workload": "concurrent-1-readers",
+      "engine": "chronotail"
+    },
+    {
+      "workload": "concurrent-1-readers",
+      "engine": "nanots"
+    },
+    {
+      "workload": "concurrent-1-readers",
+      "engine": "sqlite"
+    },
+    {
+      "workload": "concurrent-1-writer",
+      "engine": "chronotail"
+    },
+    {
+      "workload": "concurrent-1-writer",
+      "engine": "nanots"
+    },
+    {
+      "workload": "concurrent-1-writer",
+      "engine": "sqlite"
+    },
+    {
+      "workload": "concurrent-16-readers",
+      "engine": "chronotail"
+    },
+    {
+      "workload": "concurrent-16-readers",
+      "engine": "nanots"
+    },
+    {
+      "workload": "concurrent-16-readers",
+      "engine": "sqlite"
+    },
+    {
+      "workload": "concurrent-16-writer",
+      "engine": "chronotail"
+    },
+    {
+      "workload": "concurrent-16-writer",
+      "engine": "nanots"
+    },
+    {
+      "workload": "concurrent-16-writer",
+      "engine": "sqlite"
+    },
+    {
+      "workload": "concurrent-2-readers",
+      "engine": "chronotail"
+    },
+    {
+      "workload": "concurrent-2-readers",
+      "engine": "nanots"
+    },
+    {
+      "workload": "concurrent-2-readers",
+      "engine": "sqlite"
+    },
+    {
+      "workload": "concurrent-2-writer",
+      "engine": "chronotail"
+    },
+    {
+      "workload": "concurrent-2-writer",
+      "engine": "nanots"
+    },
+    {
+      "workload": "concurrent-2-writer",
+      "engine": "sqlite"
+    },
+    {
+      "workload": "concurrent-32-readers",
+      "engine": "chronotail"
+    },
+    {
+      "workload": "concurrent-32-readers",
+      "engine": "nanots"
+    },
+    {
+      "workload": "concurrent-32-readers",
+      "engine": "sqlite"
+    },
+    {
+      "workload": "concurrent-32-writer",
+      "engine": "chronotail"
+    },
+    {
+      "workload": "concurrent-32-writer",
+      "engine": "nanots"
+    },
+    {
+      "workload": "concurrent-32-writer",
+      "engine": "sqlite"
+    },
+    {
+      "workload": "concurrent-4-readers",
+      "engine": "chronotail"
+    },
+    {
+      "workload": "concurrent-4-readers",
+      "engine": "nanots"
+    },
+    {
+      "workload": "concurrent-4-readers",
+      "engine": "sqlite"
+    },
+    {
+      "workload": "concurrent-4-writer",
+      "engine": "chronotail"
+    },
+    {
+      "workload": "concurrent-4-writer",
+      "engine": "nanots"
+    },
+    {
+      "workload": "concurrent-4-writer",
+      "engine": "sqlite"
+    },
+    {
+      "workload": "concurrent-8-readers",
+      "engine": "chronotail"
+    },
+    {
+      "workload": "concurrent-8-readers",
+      "engine": "nanots"
+    },
+    {
+      "workload": "concurrent-8-readers",
+      "engine": "sqlite"
+    },
+    {
+      "workload": "concurrent-8-writer",
+      "engine": "chronotail"
+    },
+    {
+      "workload": "concurrent-8-writer",
+      "engine": "nanots"
+    },
+    {
+      "workload": "concurrent-8-writer",
+      "engine": "sqlite"
+    },
+    {
+      "workload": "point-lookup-compressed-warm",
+      "engine": "chronotail"
+    },
+    {
+      "workload": "point-lookup-warm",
+      "engine": "chronotail"
+    },
+    {
+      "workload": "point-lookup-warm",
+      "engine": "nanots"
+    },
+    {
+      "workload": "point-lookup-warm",
+      "engine": "sqlite"
+    },
+    {
+      "workload": "range-10-compressed-warm",
+      "engine": "chronotail"
+    },
+    {
+      "workload": "range-10-raw-warm",
+      "engine": "chronotail"
+    },
+    {
+      "workload": "range-10-raw-warm",
+      "engine": "nanots"
+    },
+    {
+      "workload": "range-10-raw-warm",
+      "engine": "sqlite"
+    },
+    {
+      "workload": "range-100-compressed-warm",
+      "engine": "chronotail"
+    },
+    {
+      "workload": "range-100-raw-warm",
+      "engine": "chronotail"
+    },
+    {
+      "workload": "range-100-raw-warm",
+      "engine": "nanots"
+    },
+    {
+      "workload": "range-100-raw-warm",
+      "engine": "sqlite"
+    },
+    {
+      "workload": "range-1000-compressed-warm",
+      "engine": "chronotail"
+    },
+    {
+      "workload": "range-1000-raw-warm",
+      "engine": "chronotail"
+    },
+    {
+      "workload": "range-1000-raw-warm",
+      "engine": "nanots"
+    },
+    {
+      "workload": "range-1000-raw-warm",
+      "engine": "sqlite"
+    },
+    {
+      "workload": "range-10000-compressed-warm",
+      "engine": "chronotail"
+    },
+    {
+      "workload": "range-10000-raw-warm",
+      "engine": "chronotail"
+    },
+    {
+      "workload": "range-10000-raw-warm",
+      "engine": "nanots"
+    },
+    {
+      "workload": "range-10000-raw-warm",
+      "engine": "sqlite"
+    },
+    {
+      "workload": "storage-constant",
+      "engine": "nanots"
+    },
+    {
+      "workload": "storage-constant",
+      "engine": "sqlite"
+    },
+    {
+      "workload": "storage-constant-compressed",
+      "engine": "chronotail"
+    },
+    {
+      "workload": "storage-constant-raw",
+      "engine": "chronotail"
+    },
+    {
+      "workload": "storage-random",
+      "engine": "nanots"
+    },
+    {
+      "workload": "storage-random",
+      "engine": "sqlite"
+    },
+    {
+      "workload": "storage-random-compressed",
+      "engine": "chronotail"
+    },
+    {
+      "workload": "storage-random-raw",
+      "engine": "chronotail"
+    },
+    {
+      "workload": "storage-smooth",
+      "engine": "nanots"
+    },
+    {
+      "workload": "storage-smooth",
+      "engine": "sqlite"
+    },
+    {
+      "workload": "storage-smooth-compressed",
+      "engine": "chronotail"
+    },
+    {
+      "workload": "storage-smooth-raw",
+      "engine": "chronotail"
+    },
+    {
+      "workload": "storage-spiky",
+      "engine": "nanots"
+    },
+    {
+      "workload": "storage-spiky",
+      "engine": "sqlite"
+    },
+    {
+      "workload": "storage-spiky-compressed",
+      "engine": "chronotail"
+    },
+    {
+      "workload": "storage-spiky-raw",
+      "engine": "chronotail"
+    }
+  ]
+}

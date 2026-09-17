@@ -1,8 +1,9 @@
-# Chronotail v2 internal performance report
+# Internal performance profile
 
-Status: complete internal development profile for the `v2` branch on
-2026-09-17. This is not the public competitive benchmark and makes no claim
-against NanoTS or SQLite.
+Status: complete internal before/after profile for the format-v7 engine on
+2026-09-17. This report measures Chronotail against its saved pre-redesign
+baseline; public comparisons with NanoTS and SQLite live in
+[`BENCHMARKS.md`](../../BENCHMARKS.md).
 
 ## Evidence and method
 
@@ -50,19 +51,20 @@ The candidate matrix contains 179 unique workloads and 537 measurements:
 | Allocation | 8 | Prepared append, string/prepared reads, cursor, borrow, summary, windows, and unchanged refresh. |
 | Concurrency | 6 | 1, 2, 4, 8, 16, and 32 immutable readers. |
 
-Across the 155 workloads shared with v1, the median comparator reports 88
-improvements, three ties, and 64 regressions. Twenty-four workloads are new v2
-APIs with no v1 equivalent. Counts alone are not a quality score: a 1.1% raw
+Across the 155 workloads shared with the format-v6 baseline, the median
+comparator reports 88 improvements, three ties, and 64 regressions. Twenty-four
+workloads are new format-v7 APIs with no earlier equivalent. Counts alone are
+not a quality score: a 1.1% raw
 space cost and a point-query regression each count once, while new constant-time
 summary paths have no baseline row.
 
 ## Append results
 
-Rates are million points/second. V2 compressed append is faster at every batch
+Rates are million points/second. Format-v7 compressed append is faster at every batch
 size. Raw scalar append gives up 8.2%, while raw batches of 16 or more improve
 except for the small 4.5% gain at batch 1,000.
 
-| Codec | Batch | V1 | V2 median | Change |
+| Codec | Batch | Format v6 | Format v7 median | Change |
 |---|---:|---:|---:|---:|
 | Raw | 1 | 26.66 | 24.46 | -8.2% |
 | Raw | 16 | 26.94 | 32.65 | +21.2% |
@@ -86,7 +88,7 @@ All 12 compressed pattern-appends improve, from +9.9% for irregular/random to
 ## Copied queries
 
 The table gives throughput change at every measured copied-range width. It
-shows the intended shape clearly: v2 bulk column copies dominate large raw
+shows the intended shape clearly: current bulk column copies dominate large raw
 ranges, bounded compressed decoding dominates smooth/spiky ranges, and the
 extra authenticated-tree traversal is still visible in tiny raw and random
 queries.
@@ -104,7 +106,7 @@ queries.
 
 Representative absolute results:
 
-| Workload | V1 | V2 median | V2 three-run range |
+| Workload | Format v6 | Format v7 median | Format v7 three-run range |
 |---|---:|---:|---:|
 | Raw smooth point | 3.19M points/s | 2.04M | 1.50–2.04M |
 | Raw smooth 100 | 189.06M points/s | 146.92M | 140.38–151.71M |
@@ -127,7 +129,7 @@ ratios are timer-sensitive and should be read structurally, not literally.
 
 ## New bounded read and aggregate APIs
 
-| Workload | V2 median | Three-run range |
+| Workload | Format v7 median | Three-run range |
 |---|---:|---:|
 | Cursor, 16-point buffer | 217.38M points/s | 198.33–218.23M |
 | Cursor, 128-point buffer | 562.80M points/s | 534.08–578.84M |
@@ -143,8 +145,8 @@ The full-range aggregate is another summary lookup and therefore timer-limited:
 100T logical points/s raw and 48.08T compressed at the median. It proves the
 O(1)-with-tree-height path but is not useful as a hardware throughput claim.
 
-Prepared handles improve the v2 256-series point path from 4.29M to 6.57M
-queries/s, but v1 string lookup was 14.06M. The missing active-leaf/page cache
+Prepared handles improve the current 256-series point path from 4.29M to 6.57M
+queries/s, but format-v6 string lookup was 14.06M. The missing active-leaf/page cache
 is therefore a measured optimization target, not a hidden regression.
 
 ## Storage
@@ -152,7 +154,7 @@ is therefore a measured optimization target, not a hidden regression.
 Raw format-v7 storage is 16.196 bytes/point across the matrix versus 16.020 in
 v1, a 1.1% cost for v7 object/index metadata. Compressed results are:
 
-| Timestamp/value pattern | V1 bytes/point | V2 bytes/point | Size change |
+| Timestamp/value pattern | Format-v6 bytes/point | Format-v7 bytes/point | Size change |
 |---|---:|---:|---:|
 | dense/constant | 1.389 | 1.288 | -7.3% |
 | dense/random | 16.020 | 8.200 | -48.8% |
@@ -176,7 +178,7 @@ timestamp metadata dominate data that v1 encoded exceptionally compactly.
 The immutable publication model makes recovery and verification faster but
 makes small checkpoints more metadata-heavy.
 
-| Workload | V1 | V2 median | Change |
+| Workload | Format v6 | Format v7 median | Change |
 |---|---:|---:|---:|
 | Unsynced raw, 4,096 points | 36.40M points/s | 22.61M | -37.9% |
 | Unsynced compressed, 4,096 points | 29.05M points/s | 31.03M | +6.8% |
@@ -238,7 +240,7 @@ No measured regression is omitted:
 - open and refresh regress while verification and corrupt-tail recovery improve;
 - all six parallel-reader comparisons regress.
 
-These are accepted v2 tradeoffs only in the sense that they are visible and the
+These are accepted redesign tradeoffs only in the sense that they are visible and the
 redesign's safety/structural goals are complete. They remain concrete inputs to
 the optimization list rather than being relabeled as wins.
 
@@ -274,7 +276,7 @@ complete campaign passed after the fix.
 
 ## Interpretation
 
-V2 succeeds at the architectural bets that require a format change: bounded
+The redesign succeeds at the architectural bets that require a format change: bounded
 recovery, immutable authenticated structure, much faster compressed ingest,
 smaller random-value storage, multi-gigapoint bulk reads, summary-backed count
 and aggregate queries, persistent cursors, and a demonstrably allocation-free
@@ -282,5 +284,6 @@ prepared data plane. It does not yet win tiny raw reads, small checkpoint
 latency, series-name lookup, or parallel 100-point reads. Those limits define
 the next optimization work; they do not justify weakening v7 validation.
 
-The public competitive benchmark has deliberately not been run. It is the next
-separate evidence run after this branch is handed back, exactly as requested.
+The public competitive benchmark is deliberately separate because competitor
+results did not guide implementation. See [`BENCHMARKS.md`](../../BENCHMARKS.md)
+for the later same-run comparison and its distinct methodology.

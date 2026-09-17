@@ -1,8 +1,9 @@
 # Chronotail mechanical model
 
 > Historical pre-redesign model for v1/format v6. Its bottlenecks motivated the
-> [v2 design](../plans/2026-09-17-v2-engine-design.md); statements describing the
-> “current architecture” below intentionally describe v1 and are not v2 claims.
+> [engine redesign](../plans/2026-09-17-engine-redesign.md); statements describing
+> the “current architecture” below intentionally describe the older format-v6
+> engine and are not claims about current Chronotail.
 
 Status: pre-architecture model. No engine changes were made while deriving it.
 

@@ -1,7 +1,7 @@
-# V2 optimization opportunities
+# Optimization roadmap
 
 These are engineering predictions, not benchmark claims. “From” values are
-rounded anchors from the final three-pass v2 internal profile or explicitly
+rounded anchors from the final three-pass internal profile or explicitly
 identified development prototypes on the same machine. Each experiment must
 keep correctness gates and be rejected if the measured result disagrees.
 

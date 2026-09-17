@@ -2,7 +2,7 @@
 
 > Immutable final-v1/format-v6 evidence. “Current” and “final” below refer to
 > the v1 engine. See the
-> [v2 design](../../../docs/plans/2026-09-17-v2-engine-design.md) for the successor
+> [engine redesign](../../../docs/plans/2026-09-17-engine-redesign.md) for the successor
 > architecture.
 
 ## Scope and result

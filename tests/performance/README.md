@@ -29,11 +29,11 @@ Run the full matrix in ReleaseFast and save JSON Lines output:
 ```bash
 mkdir -p tests/performance/results
 zig build performance -Doptimize=ReleaseFast -- \
-  --output tests/performance/results/v2-candidate.jsonl
+  --output tests/performance/results/candidate.jsonl
 ```
 
-Results are deliberately ignored by git. The first complete v1 run is preserved
-locally as `tests/performance/results/v1-baseline.jsonl`; preserve it and
+Results are deliberately ignored by git. The first complete format-v6 run is
+preserved locally as `tests/performance/results/v1-baseline.jsonl`; preserve it and
 compare experiments on the same machine with alternating runs. The harness
 repeats the complete matrix three times by default, prints progress to stderr,
 and writes one self-describing result per line so a partial run remains useful
@@ -54,5 +54,5 @@ Compare two runs by their median matching workloads:
 ```bash
 python3 tests/performance/compare.py \
   tests/performance/results/v1-baseline.jsonl \
-  tests/performance/results/v2-candidate.jsonl
+  tests/performance/results/candidate.jsonl
 ```

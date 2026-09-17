@@ -1,35 +1,114 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="960" height="470" viewBox="0 0 960 470" role="img" aria-labelledby="title desc" style="background-color:#ffffff;color-scheme:light">
+<svg xmlns="http://www.w3.org/2000/svg" width="1240" height="650" viewBox="0 0 1240 650" role="img" aria-labelledby="title desc">
   <title id="title">Chronotail architecture</title>
-  <rect x="0" y="0" width="960" height="470" fill="#ffffff"/>
-  <desc id="desc">Zig, C, Python, and CLI APIs feed one specialized engine which publishes immutable columnar pages, copy-on-write indexes, manifests, and rotating roots.</desc>
+  <desc id="desc">Zig, C, Python, and command-line interfaces feed one embedded engine. A writer publishes immutable columnar pages, copy-on-write indexes, and a manifest through rotating authenticated roots. Readers map committed immutable snapshots.</desc>
+  <defs>
+    <linearGradient id="top-accent" x1="0" x2="1">
+      <stop stop-color="#ff6ac1"/>
+      <stop offset="0.48" stop-color="#b89cff"/>
+      <stop offset="1" stop-color="#c9ff4a"/>
+    </linearGradient>
+    <linearGradient id="engine-fill" x1="0" x2="1">
+      <stop stop-color="#332040"/>
+      <stop offset="1" stop-color="#2a273f"/>
+    </linearGradient>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 10 5 0 10Z" fill="#b9a9c8"/>
+    </marker>
+  </defs>
+  <rect width="1240" height="650" rx="20" fill="#1d1027"/>
+  <rect width="1240" height="6" rx="3" fill="url(#top-accent)"/>
   <style>
-    text { font-family: ui-sans-serif, system-ui, sans-serif; fill: #172033; }
-    .title { font-size: 23px; font-weight: 700; }
-    .label { font-size: 16px; font-weight: 650; }
-    .small { font-size: 13px; fill: #46536b; }
-    .api { fill: #e8f0ff; stroke: #527bd8; stroke-width: 2; }
-    .engine { fill: #e8fbf2; stroke: #21865b; stroke-width: 2; }
-    .file { fill: #fff4df; stroke: #c47b18; stroke-width: 2; }
-    .arrow { stroke: #68748b; stroke-width: 2; fill: none; marker-end: url(#arrow); }
+    text { font-family: Inter, ui-sans-serif, system-ui, -apple-system, sans-serif; fill: #fbf8ff; }
+    .title { font-size: 29px; font-weight: 760; letter-spacing: -.5px; }
+    .subtitle { font-size: 14px; fill: #cdbfd8; }
+    .label { font-size: 16px; font-weight: 720; }
+    .small { font-size: 12px; fill: #cdbfd8; }
+    .micro { font-size: 11px; fill: #aa98b8; }
+    .api { fill: #2a1735; stroke: #5a3b69; stroke-width: 1.5; }
+    .engine { fill: url(#engine-fill); stroke: #b89cff; stroke-width: 2; }
+    .writer { fill: #27321e; stroke: #c9ff4a; stroke-width: 1.5; }
+    .reader { fill: #172d35; stroke: #51e1e8; stroke-width: 1.5; }
+    .object { fill: #2a1735; stroke: #6c4b7b; stroke-width: 1.5; }
+    .root { fill: #33243f; stroke: #ff6ac1; stroke-width: 1.7; }
+    .arrow { fill: none; stroke: #b9a9c8; stroke-width: 1.8; marker-end: url(#arrow); }
+    .publish { fill: none; stroke: #c9ff4a; stroke-width: 2.2; marker-end: url(#arrow); }
+    .read { fill: none; stroke: #51e1e8; stroke-width: 2.2; marker-end: url(#arrow); }
   </style>
-  <defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#68748b"/></marker></defs>
-  <text class="title" x="30" y="38">One file. One writer. Immutable reader snapshots.</text>
-  <g>
-    <rect class="api" x="30" y="80" width="180" height="70" rx="10"/><text class="label" x="120" y="108" text-anchor="middle">Zig API</text><text class="small" x="120" y="132" text-anchor="middle">compile-time specialized</text>
-    <rect class="api" x="260" y="80" width="180" height="70" rx="10"/><text class="label" x="350" y="108" text-anchor="middle">C ABI v2</text><text class="small" x="350" y="132" text-anchor="middle">bounded buffers · views</text>
-    <rect class="api" x="490" y="80" width="180" height="70" rx="10"/><text class="label" x="580" y="108" text-anchor="middle">Python</text><text class="small" x="580" y="132" text-anchor="middle">ctypes, bundled dylib</text>
-    <rect class="api" x="720" y="80" width="180" height="70" rx="10"/><text class="label" x="810" y="108" text-anchor="middle">CLI</text><text class="small" x="810" y="132" text-anchor="middle">append · query · migrate</text>
+
+  <text class="title" x="34" y="47">One file. One writer. Immutable reader snapshots.</text>
+  <text class="subtitle" x="34" y="73">Bounded publication and recovery · authenticated format v7 · no runtime dependencies</text>
+
+  <g aria-label="Public interfaces">
+    <rect class="api" x="34" y="106" width="260" height="70" rx="12"/>
+    <text class="label" x="164" y="134" text-anchor="middle">Zig API</text>
+    <text class="small" x="164" y="158" text-anchor="middle">compile-time storage specialization</text>
+
+    <rect class="api" x="338" y="106" width="260" height="70" rx="12"/>
+    <text class="label" x="468" y="134" text-anchor="middle">C ABI v2</text>
+    <text class="small" x="468" y="158" text-anchor="middle">opaque handles · caller buffers</text>
+
+    <rect class="api" x="642" y="106" width="260" height="70" rx="12"/>
+    <text class="label" x="772" y="134" text-anchor="middle">Python</text>
+    <text class="small" x="772" y="158" text-anchor="middle">batched arrays · snapshot reads</text>
+
+    <rect class="api" x="946" y="106" width="260" height="70" rx="12"/>
+    <text class="label" x="1076" y="134" text-anchor="middle">CLI</text>
+    <text class="small" x="1076" y="158" text-anchor="middle">append · range · verify · migrate</text>
   </g>
-  <path class="arrow" d="M120 150 V195 H390"/><path class="arrow" d="M350 150 V195 H430"/><path class="arrow" d="M580 150 V195 H530"/><path class="arrow" d="M810 150 V195 H570"/>
-  <rect class="engine" x="260" y="195" width="440" height="100" rx="12"/>
-  <text class="label" x="480" y="225" text-anchor="middle">Chronotail engine</text>
-  <text class="small" x="480" y="250" text-anchor="middle">columnar pages · COW indexes · summaries · bounded recovery</text>
-  <text class="small" x="480" y="273" text-anchor="middle">no runtime dependencies · prepared allocation-free data plane</text>
-  <path class="arrow" d="M480 295 V335"/>
-  <rect class="file" x="85" y="335" width="790" height="105" rx="12"/>
-  <text class="label" x="480" y="365" text-anchor="middle">Portable .ctdb format v7</text>
-  <rect x="120" y="385" width="160" height="34" rx="5" fill="#ffdca5"/><text class="small" x="200" y="407" text-anchor="middle">64 KiB control roots</text>
-  <rect x="295" y="385" width="160" height="34" rx="5" fill="#ffdca5"/><text class="small" x="375" y="407" text-anchor="middle">columnar pages</text>
-  <rect x="470" y="385" width="160" height="34" rx="5" fill="#ffdca5"/><text class="small" x="550" y="407" text-anchor="middle">COW time indexes</text>
-  <rect x="645" y="385" width="160" height="34" rx="5" fill="#ffdca5"/><text class="small" x="725" y="407" text-anchor="middle">series manifest</text>
+
+  <path class="arrow" d="M164 176v28h319"/>
+  <path class="arrow" d="M468 176v28h76"/>
+  <path class="arrow" d="M772 176v28h-76"/>
+  <path class="arrow" d="M1076 176v28H757"/>
+
+  <rect class="engine" x="298" y="204" width="644" height="98" rx="15"/>
+  <text class="label" x="620" y="235" text-anchor="middle">Embedded storage engine</text>
+  <text class="small" x="620" y="260" text-anchor="middle">strict timestamp order · columnar codecs · per-series COW time trees · persistent summaries</text>
+  <text class="small" x="620" y="283" text-anchor="middle">fixed traversal bounds · prepared allocation-free data plane · deterministic simulation seam</text>
+
+  <rect class="writer" x="90" y="342" width="270" height="82" rx="13"/>
+  <text class="label" x="225" y="371" text-anchor="middle">Writer control plane</text>
+  <text class="small" x="225" y="396" text-anchor="middle">validate → objects → sync → root → sync</text>
+  <path class="arrow" d="M385 302 260 342"/>
+
+  <rect class="reader" x="880" y="342" width="270" height="82" rx="13"/>
+  <text class="label" x="1015" y="371" text-anchor="middle">Reader data plane</text>
+  <text class="small" x="1015" y="396" text-anchor="middle">mapped snapshot · prepared handles · views</text>
+  <path class="arrow" d="M855 302 1040 342"/>
+
+  <g aria-label="Portable database object graph">
+    <rect class="root" x="454" y="342" width="332" height="82" rx="13"/>
+    <text class="label" x="620" y="371" text-anchor="middle">64 KiB control region</text>
+    <text class="small" x="620" y="396" text-anchor="middle">header · four authenticated root slots</text>
+
+    <path class="publish" d="M360 383h94"/>
+    <path class="read" d="M786 383h94"/>
+
+    <rect class="object" x="82" y="500" width="244" height="92" rx="13"/>
+    <text class="label" x="204" y="531" text-anchor="middle">Columnar pages</text>
+    <text class="small" x="204" y="554" text-anchor="middle">timestamps · values · statistics</text>
+    <text class="micro" x="204" y="575" text-anchor="middle">raw or bounded restart codecs</text>
+
+    <rect class="object" x="362" y="500" width="244" height="92" rx="13"/>
+    <text class="label" x="484" y="531" text-anchor="middle">COW time indexes</text>
+    <text class="small" x="484" y="554" text-anchor="middle">authenticated pointers · summaries</text>
+    <text class="micro" x="484" y="575" text-anchor="middle">fixed-height right-spine updates</text>
+
+    <rect class="object" x="642" y="500" width="244" height="92" rx="13"/>
+    <text class="label" x="764" y="531" text-anchor="middle">Series manifest</text>
+    <text class="small" x="764" y="554" text-anchor="middle">stable IDs · names · tree roots</text>
+    <text class="micro" x="764" y="575" text-anchor="middle">one complete generation catalog</text>
+
+    <rect class="root" x="922" y="500" width="244" height="92" rx="13"/>
+    <text class="label" x="1044" y="531" text-anchor="middle">Elected root</text>
+    <text class="small" x="1044" y="554" text-anchor="middle">generation · extent · predecessor</text>
+    <text class="micro" x="1044" y="575" text-anchor="middle">the only publication point</text>
+
+    <path class="arrow" d="M326 546h36"/>
+    <path class="arrow" d="M606 546h36"/>
+    <path class="arrow" d="M886 546h36"/>
+    <path class="arrow" d="M1044 500V454H620v-30"/>
+  </g>
+
+  <text class="micro" x="34" y="627">All persistent pointers carry offset, size, kind, and external BLAKE3 identity. Authentication and semantic validation are independent checks.</text>
 </svg>

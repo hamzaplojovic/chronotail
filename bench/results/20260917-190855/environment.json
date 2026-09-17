@@ -1,0 +1,47 @@
+{
+  "schema": 2,
+  "started_utc": "2026-09-17T17:08:55.326412+00:00",
+  "platform": "macOS-26.1-arm64-arm-64bit-Mach-O",
+  "uname": "Darwin Hamzas-MacBook-Air.local 25.1.0 Darwin Kernel Version 25.1.0: Mon Oct 20 19:32:47 PDT 2025; root:xnu-12377.41.6~2/RELEASE_ARM64_T8103 arm64",
+  "macos": "ProductName:\t\tmacOS\nProductVersion:\t\t26.1\nBuildVersion:\t\t25B78",
+  "cpu": "Apple M1",
+  "logical_cpus": "8",
+  "ram_bytes": "8589934592",
+  "filesystem": "Device Identifier:         disk3s1s1\n   Device Node:               /dev/disk3s1s1\n   Whole:                     No\n   Part of Whole:             disk3\n\n   Volume Name:               Macintosh HD\n   Mounted:                   Yes\n   Mount Point:               /\n\n   Partition Type:            41504653-0000-11AA-AA11-00306543ECAC\n   File System Personality:   APFS\n   Type (Bundle):             apfs\n   Name (User Visible):       APFS\n   Owners:                    Enabled\n\n   OS Can Be Installed:       No\n   Booter Disk:               disk3s2\n   Recovery Disk:             disk3s3\n   Media Type:                Generic\n   Protocol:                  Apple Fabric\n   SMART Status:              Verified\n   Volume UUID:               C52D1BAB-D265-4D77-A91D-977CC14C8D09\n   Disk / Partition UUID:     C52D1BAB-D265-4D77-A91D-977CC14C8D09\n\n   Disk Size:                 245.1 GB (245107195904 Bytes) (exactly 478724992 512-Byte-Units)\n   Device Block Size:         4096 Bytes\n\n   Volume Used Space:         12.2 GB (12189106176 Bytes) (exactly 23806848 512-Byte-Units)\n   Container Total Space:     245.1 GB (245107195904 Bytes) (exactly 478724992 512-Byte-Units)\n   Container Free Space:      100.8 GB (100807720960 Bytes) (exactly 196890080 512-Byte-Units)\n   Allocation Block Size:     4096 Bytes\n\n   Media OS Use Only:         No\n   Media Read-Only:           Yes\n   Volume Read-Only:          Yes (read-only mount flag set)\n\n   Device Location:           Internal\n   Removable Media:           Fixed\n\n   Solid State:               Yes\n   Hardware AES Support:      Yes\n\n   This disk is an APFS Volume Snapshot.  APFS Information:\n   APFS Snapshot Name:        com.apple.os.update-C6AB179000F92C4C211177BC5C840A511D1AA2A227C324AA9AAC14FC599E9873\n   APFS Snapshot UUID:        C52D1BAB-D265-4D77-A91D-977CC14C8D09\n   APFS Container:            disk3\n   APFS Physical Store:       disk0s2\n   APFS Volume Group:         AEC0D19B-36E4-4A4F-8939-727D72B50075\n   EFI Driver In macOS:       2632040015000002\n   Encrypted:                 No\n   FileVault:                 Yes\n   Sealed:                    Yes\n   Locked:                    No\n\n   APFS Snapshots are defined upon this APFS Volume.  Snapshot list:\n   Snapshot UUID:             C52D1BAB-D265-4D77-A91D-977CC14C8D09\n   Name:                      com.apple.os.update-C6AB179000F92C4C211177BC5C840A511D1AA2A227C324AA9AAC14FC599E9873\n   XID:                       29095751",
+  "zig": "0.15.2",
+  "clang": "Apple clang version 17.0.0 (clang-1700.3.19.1)\nTarget: arm64-apple-darwin25.1.0\nThread model: posix\nInstalledDir: /Library/Developer/CommandLineTools/usr/bin",
+  "cmake": "cmake version 4.2.1\n\nCMake suite maintained and supported by Kitware (kitware.com/cmake).",
+  "python": "3.14.6 (v3.14.6:c63aec69bd5, Jun 10 2026, 08:07:54) [Clang 21.0.0 (clang-2100.1.1.101)]",
+  "nanots_commit": "d551210c8d521604a70a73f0f85fe2759c434c23",
+  "sqlite_header_version": "#define SQLITE_VERSION        \"3.38.5\"",
+  "chronotail_abi": 2,
+  "chronotail_format": 7,
+  "run_count": 5,
+  "group_count": 99,
+  "result_count": 495,
+  "load_average_start": [
+    2.34375,
+    5.71630859375,
+    5.912109375
+  ],
+  "fingerprint": {
+    "git_commit": "8247a8898704203c485ccc82a10bbfc763537b4f",
+    "competitive_cpp_sha256": "107a226eaa07837127e29b5013a4ca32d060dc5de875007a6607c919bd6c904d",
+    "bench_py_sha256": "33bfeca200d5577b36f54c3960993348ca2fb21dc0222cf08a337adf9070aa49",
+    "chronotail_header_sha256": "91d7e0459fb1e8639c5064333c5d45c2dbf2367c25ceeb9fbb25a9bad39e8c5e",
+    "nanots_commit": "d551210c8d521604a70a73f0f85fe2759c434c23",
+    "platform": "macOS-26.1-arm64-arm-64bit-Mach-O",
+    "format": 7,
+    "abi": 2,
+    "identity": "8b4b3dcfab483eb2079be538d48d595a4e5885562df21bd195b93cc79e47455f"
+  },
+  "latency_sampling": "append: deterministic randomized intervals averaging 1/1024 records; queries and aggregates: every call; concurrency: every 256th aggregate query",
+  "cache_policy": "warm OS page cache; cold cache omitted because reliable macOS eviction requires privileged global purge",
+  "completed_utc": "2026-09-17T18:47:56.571527+00:00",
+  "elapsed_seconds": 5940.787977933884,
+  "load_average_end": [
+    6.63330078125,
+    6.1953125,
+    6.66455078125
+  ]
+}

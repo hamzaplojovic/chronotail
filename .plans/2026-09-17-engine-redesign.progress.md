@@ -1,8 +1,8 @@
-# Plan Progress Report: Chronotail v2 engine design
+# Plan Progress Report: Chronotail engine redesign
 
 **Date:** 2026-09-17
 
-**Plan file:** [`docs/plans/2026-09-17-v2-engine-design.md`](../docs/plans/2026-09-17-v2-engine-design.md)
+**Plan file:** [`docs/plans/2026-09-17-engine-redesign.md`](../docs/plans/2026-09-17-engine-redesign.md)
 
 **Status:** Completed
 
@@ -17,9 +17,9 @@
 
 The format-v7 engine, migration boundary, APIs, deterministic simulator,
 internal profiler, documentation, and release checks are complete on the `v2`
-branch. The public competitive benchmark is intentionally excluded from this
-completion calculation because the user requested that it run only after v2 is
-handed back.
+branch. The public competitive benchmark was kept out of the development
+feedback loop, then run and published only after the engine and internal profile
+were complete.
 
 ## Original request coverage
 
@@ -27,14 +27,14 @@ handed back.
 |---:|---|---|---|
 | 1 | Read the repository, README, and documentation for context. | Repository and documentation audit; architecture and API cross-check. | Done |
 | 2 | Fetch and apply TigerBeetle's Tiger Style. | Official TigerStyle reviewed; bounded resources, static data plane, assertions, batching, deterministic simulation, and safety-first ordering applied. | Done |
-| 3 | Produce a simple one-line v2 focus pitch list. | `docs/v2-pitch.md`. | Done |
-| 4 | Produce a one-line optimization list with predicted from/to metrics. | `docs/v2-optimization-opportunities.md`, recalibrated against the final internal profile. | Done |
-| 5 | Take a wide step back and rethink the entire architecture. | `docs/v2-rethink-report.md` and the accepted engine design. | Done |
+| 3 | Produce a simple one-line v2 focus pitch list. | The product-focus list in `docs/design.md`. | Done |
+| 4 | Produce a one-line optimization list with predicted from/to metrics. | `docs/performance/optimization-roadmap.md`, recalibrated against the final internal profile. | Done |
+| 5 | Take a wide step back and rethink the entire architecture. | `docs/design.md` and the accepted engine design. | Done |
 | 6 | Create full internal performance profiling under `tests/performance`. | 179-workload, three-pass candidate matrix covering append, storage, queries, new APIs, checkpoints, control plane, allocations, and concurrency. | Done |
 | 7 | Capture the v1 baseline first and save results as untracked files. | Baseline committed only as harness support; `v1-baseline.jsonl` and all result runs are ignored locally. | Done |
 | 8 | Create a `v2` branch from `main`. | Branch `v2` descends from `main` commit `659163b`. | Done |
 | 9 | Edit the existing implementation in place, not under `v2/`. | Production sources replaced in `src/`; no `src/v2` or parallel engine tree exists. | Done |
-| 10 | Finish v2, compare internally, and leave the public benchmark for handoff. | Internal comparison and release gates complete; public benchmark not run. | Done |
+| 10 | Finish v2, compare internally, and leave the public benchmark for handoff. | Internal comparison and release gates completed first; the later publication pass ran the expanded public suite separately. | Done |
 
 ## Progress by plan step
 
@@ -112,7 +112,7 @@ migration, and recovery cases. The final campaign passed 1,000 seeds and
 ### 9. Internal performance feedback loop — done
 
 **Files:** `tests/performance/main.zig`, `tests/performance/compare.py`,
-`tests/performance/README.md`, `docs/v2-performance-report.md`
+`tests/performance/README.md`, `docs/performance/internal-profile.md`
 
 Captured the pre-change v1 baseline, implemented the full matrix before engine
 work, repeated all 179 candidate workloads three times, proved zero allocation
@@ -121,12 +121,13 @@ runs ignored, and documented both gains and regressions.
 
 ### 10. Documentation and release handoff — done
 
-**Files:** README, architecture, API, security, contributing, release notes,
-pitch, rethink, optimization, performance, plan-status, and historical banners.
+**Files:** README, documentation index, getting-started, architecture,
+durability, migration, API, security, contributing, release notes, design,
+optimization, performance, plan-status, and historical banners.
 
-Updated current v2 behavior without overwriting the v1 benchmark record or its
-machine-model analysis. Internal links, release metadata, examples, bindings,
-and architecture assets were validated.
+Updated current Chronotail behavior without creating parallel versioned docs or
+overwriting the v1 benchmark record and machine-model analysis. Internal links,
+release metadata, examples, bindings, and architecture assets were validated.
 
 ## Accepted implementation differences
 
@@ -177,7 +178,7 @@ None.
 ### Issues found
 
 None blocking completion. Measured optimization targets remain in
-`docs/v2-optimization-opportunities.md`; they are follow-on performance work,
+`docs/performance/optimization-roadmap.md`; they are follow-on performance work,
 not missing v2 requirements.
 
 ## Files changed
@@ -221,11 +222,10 @@ No unrelated product feature or production dependency was added.
 | Internal profile | Pass, 179 workloads × 3 repetitions |
 | Allocation profile | Pass, 24/24 rows with zero allocator activity |
 | Extended simulator | Pass, 1,000 seeds/100,000,000 operations/0 failures |
-| Public competitive benchmark | Intentionally not run; next handoff step |
+| Public competitive benchmark | Pass, 99 groups × 5 repetitions = 495 measurements |
 
 ## Remaining work
 
-No required implementation work remains. The next action is the user's fresh,
-unchanged public benchmark run against v2. Optional optimizations are separately
-ranked with predicted from/to metrics and must repeat the same correctness gates
-if pursued.
+No required implementation or evidence work remains. Optional optimizations are
+separately ranked with predicted from/to metrics and must repeat the same
+correctness and internal-profile gates if pursued.

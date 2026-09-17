@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1240" height="572"
+ viewBox="0 0 1240 572" role="img" aria-labelledby="title desc">
+<title id="title">Chronotail benchmark overview</title>
+<desc id="desc">Six headline metrics from the current competitive benchmark.</desc>
+<defs>
+ <linearGradient id="accent" x1="0" x2="1"><stop stop-color="#ff6ac1"/><stop offset="0.48" stop-color="#b89cff"/><stop offset="1" stop-color="#c9ff4a"/></linearGradient>
+</defs>
+<rect width="1240" height="572" rx="18" fill="#1d1027"/>
+<rect width="1240" height="5" rx="2.5" fill="url(#accent)"/>
+<style>
+ text { font-family: Inter, ui-sans-serif, system-ui, -apple-system, sans-serif; fill: #fbf8ff; }
+ .title { font-size: 27px; font-weight: 750; letter-spacing: -.4px; }
+ .subtitle { font-size: 14px; fill: #cdbfd8; }
+ .group { font-size: 15px; font-weight: 720; fill: #fbf8ff; }
+ .label { font-size: 13px; fill: #e9e0ef; }
+ .value { font-size: 13px; font-weight: 700; fill: #fbf8ff; }
+ .footer { font-size: 11px; fill: #a997b8; letter-spacing: .2px; }
+</style>
+<text class="title" x="32" y="42">Chronotail performance at a glance</text>
+<text class="subtitle" x="32" y="68">Same-machine medians; five runs; exact methodology and losses remain in BENCHMARKS.md</text>
+<rect x="32" y="100" width="568" height="118" rx="14" fill="#2a1735" stroke="#523461"/>
+<text x="54" y="129" font-size="12" font-weight="750" fill="#c9ff4a" letter-spacing="1.2">BATCH APPEND</text>
+<text x="54" y="169" font-size="27" font-weight="760">28.14M records/s</text>
+<text class="subtitle" x="54" y="194">6.29× fastest alternative</text>
+<rect x="624" y="100" width="568" height="118" rx="14" fill="#2a1735" stroke="#523461"/>
+<text x="646" y="129" font-size="12" font-weight="750" fill="#c9ff4a" letter-spacing="1.2">RANDOM POINT</text>
+<text x="646" y="169" font-size="27" font-weight="760">1.64M queries/s</text>
+<text class="subtitle" x="646" y="194">1.15× fastest alternative</text>
+<rect x="32" y="242" width="568" height="118" rx="14" fill="#2a1735" stroke="#523461"/>
+<text x="54" y="271" font-size="12" font-weight="750" fill="#c9ff4a" letter-spacing="1.2">100-POINT RANGE</text>
+<text x="54" y="311" font-size="27" font-weight="760">1.22M queries/s</text>
+<text class="subtitle" x="54" y="336">11.53× fastest alternative</text>
+<rect x="624" y="242" width="568" height="118" rx="14" fill="#2a1735" stroke="#523461"/>
+<text x="646" y="271" font-size="12" font-weight="750" fill="#c9ff4a" letter-spacing="1.2">100-POINT AGGREGATE</text>
+<text x="646" y="311" font-size="27" font-weight="760">355.31k queries/s</text>
+<text class="subtitle" x="646" y="336">3.37× fastest alternative</text>
+<rect x="32" y="384" width="568" height="118" rx="14" fill="#2a1735" stroke="#523461"/>
+<text x="54" y="413" font-size="12" font-weight="750" fill="#c9ff4a" letter-spacing="1.2">32 READERS</text>
+<text x="54" y="453" font-size="27" font-weight="760">7.40M queries/s</text>
+<text class="subtitle" x="54" y="478">18.84× fastest alternative</text>
+<rect x="624" y="384" width="568" height="118" rx="14" fill="#2a1735" stroke="#523461"/>
+<text x="646" y="413" font-size="12" font-weight="750" fill="#c9ff4a" letter-spacing="1.2">COMPRESSED STORAGE</text>
+<text x="646" y="453" font-size="27" font-weight="760">5.64 bytes/point</text>
+<text class="subtitle" x="646" y="478">smooth telemetry</text>
+<text class="footer" x="32" y="548">Run 20260917-190855 · Apple M1 · format v7 · C ABI v2</text>
+</svg>

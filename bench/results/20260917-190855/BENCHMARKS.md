@@ -2,7 +2,7 @@
 
 > Current format-v7 / C-ABI-v2 evidence. Run `20260917-190855` contains 495 measurements across 99 engine/workload groups and five repetitions.
 
-![Benchmark overview](bench/results/20260917-190855/benchmark-overview.svg)
+![Benchmark overview](benchmark-overview.svg)
 
 ## Result in one minute
 
@@ -13,7 +13,7 @@
 - **32-reader throughput while writing:** 7.40M queries/s; 223.33× NanoTS, 18.84× SQLite.
 - **Compressed smooth storage:** 5.644 bytes/point.
 
-These are same-run comparisons, not copied vendor numbers. Raw records are in [`raw.jsonl`](bench/results/20260917-190855/raw.jsonl), exact medians and run ranges are in [`summary.csv`](bench/results/20260917-190855/summary.csv), the workload identity contract is in [`matrix.json`](bench/results/20260917-190855/matrix.json), and every command is in [`commands.log`](bench/results/20260917-190855/commands.log).
+These are same-run comparisons, not copied vendor numbers. Raw records are in [`raw.jsonl`](raw.jsonl), exact medians and run ranges are in [`summary.csv`](summary.csv), the workload identity contract is in [`matrix.json`](matrix.json), and every command is in [`commands.log`](commands.log).
 
 ## Test machine
 
@@ -31,7 +31,7 @@ These are same-run comparisons, not copied vendor numbers. Raw records are in [`
 
 ## Append
 
-![Append throughput](bench/results/20260917-190855/benchmark-append.svg)
+![Append throughput](benchmark-append.svg)
 
 | Workload | Engine | Throughput | Run range | p50 | p95 | p99 |
 |---|---|---:|---:|---:|---:|---:|
@@ -55,11 +55,11 @@ The 4,096-point batch row uses each engine's best available public ingestion pat
 
 No multiplier is claimed for the durability-window rows. Chronotail publishes with `fsync`, NanoTS rollover uses synchronous `msync`, and SQLite uses WAL with `synchronous=FULL`. The logical windows match; macOS does not promise identical power-loss semantics for those primitives.
 
-![Checkpoint latency](bench/results/20260917-190855/benchmark-durability.svg)
+![Checkpoint latency](benchmark-durability.svg)
 
 ## Copied queries
 
-![Query throughput](bench/results/20260917-190855/benchmark-query.svg)
+![Query throughput](benchmark-query.svg)
 
 | Workload | Engine | Throughput | Run range | p50 | p95 | p99 |
 |---|---|---:|---:|---:|---:|---:|
@@ -84,13 +84,13 @@ No multiplier is claimed for the durability-window rows. Chronotail publishes wi
 | `range-10000-raw-warm` | sqlite | 1.36k/s | 1.29k–1.40k/s | 731.708 µs | 771.208 µs | 804.500 µs |
 | `range-10000-compressed-warm` | chronotail | 23.02k/s | 19.39k–23.48k/s | 39.208 µs | 41.916 µs | 106.292 µs |
 
-![Query latency](bench/results/20260917-190855/benchmark-query-latency.svg)
+![Query latency](benchmark-query-latency.svg)
 
 Raw rows are equivalent cross-engine workloads. Chronotail compressed rows are an internal storage/CPU choice and are never used to compute competitor ratios. Queries use deterministic random starts against a one-million-point database in the warm OS page cache.
 
 ## Aggregates
 
-![Aggregate throughput](bench/results/20260917-190855/benchmark-aggregate.svg)
+![Aggregate throughput](benchmark-aggregate.svg)
 
 | Workload | Engine | Throughput | Run range | p50 | p95 | p99 |
 |---|---|---:|---:|---:|---:|---:|
@@ -113,9 +113,9 @@ The full-series rows execute 100 calls so the scanning engines remain practical.
 
 ## Concurrent readers and writer
 
-![Concurrent reader throughput](bench/results/20260917-190855/benchmark-concurrency.svg)
+![Concurrent reader throughput](benchmark-concurrency.svg)
 
-![Writer throughput under reader load](bench/results/20260917-190855/benchmark-concurrent-writer.svg)
+![Writer throughput under reader load](benchmark-concurrent-writer.svg)
 
 | Readers | Engine | Writer records/s | Reader queries/s | Reader p50 | Reader p99 |
 |---:|---|---:|---:|---:|---:|
@@ -142,7 +142,7 @@ Writer and reader rates are deliberately separate. Readers query the fixed initi
 
 ## Storage
 
-![Storage efficiency](bench/results/20260917-190855/benchmark-storage.svg)
+![Storage efficiency](benchmark-storage.svg)
 
 | Pattern | Engine/mode | Total size | Bytes/point |
 |---|---|---:|---:|
