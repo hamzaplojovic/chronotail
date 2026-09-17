@@ -1,8 +1,9 @@
-# Chronotail 2.0.0 — unreleased
+# Chronotail 2.0.0
 
 Chronotail 2.0.0 replaces the storage kernel with portable format v7 and C ABI
-v2. It remains unreleased until signed artifacts and the final release checklist
-are complete.
+v2. The release supports macOS ARM64 and includes the native CLI, static and
+dynamic C libraries, public header, API documentation, and a dependency-free
+Python wheel.
 
 ## Highlights
 
