@@ -6,7 +6,7 @@ Chronotail stores multiple named series in one portable `.ctdb` file. It has no 
 
 > **v1.0.0** · file format **v6** · C ABI **v1** · macOS ARM64
 
-<p align="center"><img src="docs/assets/architecture.svg" alt="Chronotail architecture" width="900"></p>
+<p align="center"><img src="docs/assets/architecture.png" alt="Chronotail architecture" width="900"></p>
 
 ## Why Chronotail
 
@@ -84,21 +84,21 @@ The benchmark host carried unrelated background load. Same-run competitor ratios
 
 ### Append throughput
 
-<p align="center"><img src="docs/assets/benchmark-append.svg" alt="Append throughput comparison" width="900"></p>
+<p align="center"><img src="docs/assets/benchmark-append.png" alt="Append throughput comparison" width="900"></p>
 
 ### Query throughput
 
-<p align="center"><img src="docs/assets/benchmark-query.svg" alt="Query throughput comparison" width="900"></p>
+<p align="center"><img src="docs/assets/benchmark-query.png" alt="Query throughput comparison" width="900"></p>
 
 ### Concurrent readers
 
-<p align="center"><img src="docs/assets/benchmark-concurrency.svg" alt="Concurrent reader throughput comparison" width="900"></p>
+<p align="center"><img src="docs/assets/benchmark-concurrency.png" alt="Concurrent reader throughput comparison" width="900"></p>
 
-<p align="center"><img src="docs/assets/benchmark-concurrent-writer.svg" alt="Writer throughput under reader load" width="900"></p>
+<p align="center"><img src="docs/assets/benchmark-concurrent-writer.png" alt="Writer throughput under reader load" width="900"></p>
 
 ### Storage efficiency
 
-<p align="center"><img src="docs/assets/benchmark-storage.svg" alt="Storage efficiency comparison" width="900"></p>
+<p align="center"><img src="docs/assets/benchmark-storage.png" alt="Storage efficiency comparison" width="900"></p>
 
 ## Durability and snapshots
 

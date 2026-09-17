@@ -1,6 +1,6 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="960" height="470" viewBox="0 0 960 470" role="img" aria-labelledby="title desc">
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="470" viewBox="0 0 960 470" role="img" aria-labelledby="title desc" style="background-color:#ffffff;color-scheme:light">
   <title id="title">Chronotail architecture</title>
-  <rect width="100%" height="100%" rx="8" fill="#ffffff"/>
+  <rect x="0" y="0" width="960" height="470" fill="#ffffff"/>
   <desc id="desc">Zig, C, Python, and CLI APIs feed one specialized engine which writes append-only blocks and checkpoint generations read through immutable snapshots.</desc>
   <style>
     text { font-family: ui-sans-serif, system-ui, sans-serif; fill: #172033; }

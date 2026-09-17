@@ -36,7 +36,7 @@ All binaries use optimized release builds. Every engine receives the same determ
 | append-C-1MiB | nanots | 2.18M/s | 33.21 | 0.042 µs | 0.125 µs | 774.68 MiB |
 | append-C-1MiB | sqlite | 763.46k/s | 11.65 | 0.917 µs | 4.125 µs | 356.87 MiB |
 
-![Append throughput](docs/assets/benchmark-append.svg)
+![Append throughput](docs/assets/benchmark-append.png)
 
 No cross-engine multiplier is claimed for append durability workloads. The logical durability windows match, but the public persistence primitives do not.
 
@@ -76,7 +76,7 @@ Cold-cache numbers are intentionally omitted: reliable cache eviction on this ma
 | range-100-raw-warm | sqlite | 44.74k/s | 68.26 | 20.667 µs | 51.459 µs | 34.30 MiB |
 | range-100-compressed-warm | chronotail | 166.21k/s | 253.62 | 5.625 µs | 8.916 µs | 6.85 MiB |
 
-![Query throughput](docs/assets/benchmark-query.svg)
+![Query throughput](docs/assets/benchmark-query.png)
 
 Raw equivalent-workload ratios:
 
@@ -108,9 +108,9 @@ Compressed Chronotail is 7.39× slower than raw Chronotail for 100-point ranges,
 | 32 | sqlite | 145.69k | 223.62k | 22.000 µs | 2357.125 µs |
 
 
-![Concurrent reader throughput](docs/assets/benchmark-concurrency.svg)
+![Concurrent reader throughput](docs/assets/benchmark-concurrency.png)
 
-![Writer throughput under reader load](docs/assets/benchmark-concurrent-writer.svg)
+![Writer throughput under reader load](docs/assets/benchmark-concurrent-writer.png)
 
 Writer and reader rates are deliberately not combined. Readers query the fixed initial one-million-point snapshot while the writer appends and durably rolls over/checkpoints at roughly 1 MiB logical boundaries. This avoids rewarding an engine for exposing uncommitted tail points.
 
@@ -128,7 +128,7 @@ Writer and reader rates are deliberately not combined. Readers query the fixed i
 | random | SQLite normal | 356.87 MiB | 37.421 |
 
 
-![Storage efficiency](docs/assets/benchmark-storage.svg)
+![Storage efficiency](docs/assets/benchmark-storage.png)
 
 Physical size includes persistent companion/catalog files whose basename begins with the database name. NanoTS preallocation is sized to exactly the required number of calculated blocks; no unused reserve blocks are added. SQLite is checkpointed and closed before measurement.
 

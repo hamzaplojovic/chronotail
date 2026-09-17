@@ -1,6 +1,6 @@
 # Architecture
 
-![Chronotail architecture](assets/architecture.svg)
+![Chronotail architecture](assets/architecture.png)
 
 Chronotail separates stable boundaries from replaceable internals:
 

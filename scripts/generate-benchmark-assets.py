@@ -5,6 +5,8 @@ from __future__ import annotations
 
 import csv
 import html
+import shutil
+import subprocess
 import sys
 from pathlib import Path
 
@@ -53,8 +55,9 @@ def chart(
             ]
         )
     svg = f'''<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}"
- viewBox="0 0 {width} {height}" role="img" aria-label="{html.escape(title)}">
-<rect width="100%" height="100%" rx="8" fill="#ffffff"/>
+ viewBox="0 0 {width} {height}" role="img" aria-label="{html.escape(title)}"
+ style="background-color:#ffffff;color-scheme:light">
+<rect x="0" y="0" width="{width}" height="{height}" fill="#ffffff"/>
 <style>
  text {{ font-family: ui-sans-serif, system-ui, sans-serif; fill: #172033; }}
  .title {{ font-size: 22px; font-weight: 700; }}
@@ -154,6 +157,14 @@ def main() -> None:
         "Physical database and companion-file size after close",
         storage_items,
     )
+    sips = shutil.which("sips")
+    if sips is not None:
+        for svg in ASSETS.glob("*.svg"):
+            subprocess.run(
+                [sips, "-s", "format", "png", str(svg), "--out", str(svg.with_suffix(".png"))],
+                check=True,
+                stdout=subprocess.DEVNULL,
+            )
     print(f"Generated benchmark assets from {run_id}")
 
 

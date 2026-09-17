@@ -65,7 +65,10 @@ def main() -> None:
         "benchmark-storage.svg",
     )
     for name in expected_assets:
-        assert (ROOT / "docs/assets" / name).is_file(), f"missing asset: {name}"
+        svg = ROOT / "docs/assets" / name
+        png = svg.with_suffix(".png")
+        assert svg.is_file(), f"missing asset: {name}"
+        assert png.is_file(), f"missing rendered asset: {png.name}"
     print(f"release metadata valid: v{version}, macOS ARM64, benchmark {run_id}")
 
 
