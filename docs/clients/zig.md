@@ -169,3 +169,43 @@ newer complete generation validates and is adopted.
 
 See [durability and recovery](../durability.md) for checkpoint semantics and
 [migration](../migration.md) for the operational format transition.
+
+## API reference
+
+### Writer
+
+| API | Contract |
+|---|---|
+| `Appender.create` | Creates a new database and fails if the path exists. |
+| `Appender.open` | Opens format v7 or creates a new database; v6 requires migration. |
+| `prepareSeries` | Reserves bounded per-series append metadata until checkpoint. |
+| `appendBatch` | Validates and appends equal-length ordered timestamp/value slices. |
+| `checkpointWithDurability` | Publishes with `.memory` or `.disk`. |
+| `close` | Publishes healthy pending state and releases the writer. |
+| `abort` | Releases a poisoned or intentionally abandoned writer without publication. |
+
+### Reader
+
+| API | Contract |
+|---|---|
+| `Reader.open` | Opens and validates one immutable committed generation. |
+| `prepare` | Returns a generation-bound `SeriesHandle`. |
+| `rangeInto` / `rangePreparedInto` | Copies a prefix and returns total required points. |
+| `cursor` / `cursorPrepared` / `cursorNext` | Performs bounded persistent range traversal. |
+| `aggregate` / `aggregatePrepared` | Computes count/min/max/sum/first/last. |
+| `aggregateWindowsPrepared` | Computes fixed-resolution inclusive windows. |
+| `borrowRawPage` | Returns snapshot-owned raw slices when representation permits. |
+| `refresh` | Adopts a newer complete generation and invalidates borrowed state. |
+| `close` | Releases the snapshot and its mapping. |
+
+### Administrative operations
+
+| API | Contract |
+|---|---|
+| `verifyPath` | Authenticates and semantically validates the complete committed graph. |
+| `migrateV6` | Creates and verifies a separate format-v7 file from format-v6 input. |
+| `AppenderFor` / `ReaderFor` | Specializes the engine for an explicit compile-time storage implementation. |
+
+The exported declarations in
+[`src/chronotail.zig`](../../src/chronotail.zig) are authoritative for exact
+types and error sets.

@@ -6,7 +6,7 @@ Chronotail stores multiple named series in one portable `.ctdb` file. There is
 no server, SQL layer, background thread, or production runtime dependency. One
 writer appends while any number of readers query immutable committed snapshots.
 
-> Chronotail 2.0.0 is unreleased. The current source uses file format v7 and C
+> Chronotail 2.1.0 is unreleased. The current source uses file format v7 and C
 > ABI v2, and is validated for macOS ARM64 with Zig 0.15.2.
 
 ![Chronotail architecture](docs/assets/architecture.svg)
@@ -21,8 +21,8 @@ writer appends while any number of readers query immutable committed snapshots.
   choices; disk checkpoints use ordered sync and root publication.
 - **Defensive recovery:** four checksummed root slots bound startup work to the
   64 KiB control region, with full structural and semantic validation afterward.
-- **Small integration surface:** native Zig, C ABI v2, Python bindings, and a
-  command-line interface all exercise the same engine.
+- **Small integration surface:** native Zig, C ABI v2, Go and Python bindings,
+  and a command-line interface all exercise the same engine.
 - **Portable storage:** format v7 uses explicit little-endian integer domains,
   external BLAKE3 object identities, and no persisted native structs.
 
@@ -66,7 +66,19 @@ with chronotail.Reader("metrics.ctdb") as db:
 ```
 
 See the [getting-started guide](docs/getting-started.md) for installation,
-complete CLI examples, and first programs in Python and Zig.
+complete CLI examples, and first programs in Go, Python, and Zig.
+
+## Language clients
+
+| Client | Package or header | Guide |
+|---|---|---|
+| Go | `github.com/hamzaplojovic/chronotail/v2/clients/go` | [Usage and API](docs/clients/go.md) |
+| Python | `clients/python` (`import chronotail`) | [Usage and API](docs/clients/python.md) |
+| C | `include/chronotail.h` | [Usage and ABI reference](docs/clients/c.md) |
+| Zig | `src/chronotail.zig` | [Usage and API](docs/clients/zig.md) |
+
+Go, Python, and C use C ABI v2. Zig uses the native facade. The Go package and
+Python binding add no third-party runtime dependency or background worker.
 
 ## Performance
 
@@ -163,9 +175,11 @@ capacity planning, validation, and rollback.
 - [Architecture](docs/architecture.md)
 - [Durability and recovery](docs/durability.md)
 - [Migration](docs/migration.md)
-- [Zig API](docs/api/zig.md)
-- [C API](docs/api/c.md)
-- [Python API](docs/api/python.md)
+- [Client overview](docs/clients/index.md)
+- [Go client and API](docs/clients/go.md)
+- [Python client and API](docs/clients/python.md)
+- [C client and ABI](docs/clients/c.md)
+- [Zig client and API](docs/clients/zig.md)
 - [Design rationale](docs/design.md)
 - [Internal performance profile](docs/performance/internal-profile.md)
 - [Optimization roadmap](docs/performance/optimization-roadmap.md)
@@ -184,6 +198,9 @@ zig build test -Doptimize=ReleaseSafe
 zig build test -Doptimize=ReleaseFast
 zig build simulator -Doptimize=ReleaseFast
 zig build performance -Doptimize=ReleaseFast -- --quick
+CGO_LDFLAGS="-L$PWD/zig-out/lib" \
+DYLD_LIBRARY_PATH="$PWD/zig-out/lib" \
+go test ./clients/go/...
 python3 scripts/check-release.py
 ```
 

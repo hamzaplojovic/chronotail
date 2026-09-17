@@ -1,5 +1,8 @@
 # Client layout and Go binding design
 
+Status: implemented and verified on the `clients-go` branch for Chronotail
+2.1.0. Format v7 and C ABI v2 are unchanged.
+
 ## Goal
 
 Give Chronotail one obvious home for language clients, add an idiomatic Go
@@ -32,9 +35,10 @@ docs/clients/
 └── zig.md
 ```
 
-The root `go.mod` makes `github.com/hamzaplojovic/chronotail/clients/go` a
-normal import path and keeps the canonical `include/chronotail.h` inside the Go
-module. The Python package moves as a unit from `python/` to `clients/python/`.
+The root `go.mod` makes `github.com/hamzaplojovic/chronotail/v2/clients/go` a
+valid major-version-2 import path and keeps the canonical
+`include/chronotail.h` inside the Go module. The Python package moves as a unit
+from `python/` to `clients/python/`.
 C and Zig keep their canonical implementation paths; their `clients/`
 directories are navigation entry points rather than duplicate sources.
 
@@ -99,6 +103,10 @@ provide short setup instructions and point to the canonical guides under
 - Release policy, documentation-link, checksum, and isolated artifact checks.
 - Deterministic simulation only if implementation or persistence code changes;
   this design intentionally changes neither.
+
+All listed client, documentation, release-policy, three-mode Zig, and isolated
+artifact gates passed. The packaged smoke test executes the CLI, Python wheel,
+C example, and Go consumer from the extracted release archive.
 
 ## Alternatives rejected
 

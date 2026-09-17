@@ -4,12 +4,18 @@ The Python package requires Python 3.10 or newer and C ABI v2. The validated
 release target is macOS ARM64; the wheel bundles `libchronotail.dylib` and has no
 third-party runtime package dependency.
 
+Install the wheel from the extracted release archive:
+
+```bash
+python3 -m pip install python/chronotail-2.1.0-py3-none-macosx_11_0_arm64.whl
+```
+
 ## Development install
 
 ```bash
 zig build -Doptimize=ReleaseFast
 export CHRONOTAIL_LIBRARY="$PWD/zig-out/lib/libchronotail.dylib"
-python3 -m pip install -e python
+python3 -m pip install -e clients/python
 ```
 
 `CHRONOTAIL_LIBRARY` selects an explicit native library. Without it, the binding
@@ -98,6 +104,50 @@ Prepared reader handles, persistent cursors, borrowed raw-page views,
 fixed-resolution aggregate windows, full-file verification, and v6 migration
 are currently Zig/C/CLI facilities. The Python surface intentionally stays
 small until those ownership and buffer contracts have idiomatic bindings.
+
+Python objects are not documented as safe for concurrent method calls. Use
+independent readers in independent threads and keep one writer owner.
+
+## API reference
+
+### Module functions and values
+
+| API | Contract |
+|---|---|
+| `open(path, *, batch_size=1000, codec="compressed")` | Convenience constructor for `Writer`. |
+| `read(path)` | Convenience constructor for `Reader`. |
+| `ABI_VERSION` | Native ABI required by this package; currently `2`. |
+| `ChronotailError` | Native failure with status text and numeric code. |
+| `Aggregate` | Named tuple containing `count`, `minimum`, `maximum`, `sum`, `first`, and `last`. |
+
+### `Writer`
+
+| API | Contract |
+|---|---|
+| `Writer(path, batch_size=1000, codec="compressed")` | Opens or creates a writer using `"raw"` or `"compressed"`. |
+| `append(series, timestamp, value)` | Buffers one point and flushes at `batch_size`. |
+| `append(series, timestamps, values)` | Alias of `append_many` for non-integer timestamp inputs. |
+| `append_many(series, timestamps, values)` | Submits equal-length iterable batches; writable native arrays use the direct path. |
+| `prepare(series, maximum_points_before_checkpoint)` | Reserves the bounded native append path. |
+| `checkpoint(fsync=False)` | Flushes binding buffers and publishes with memory or disk durability. |
+| `close()` | Flushes, publishes healthy state, and consumes the handle; repeated calls are harmless. |
+
+`Writer` is a context manager. If an exception escapes the context, `close()`
+still runs; explicitly checkpoint before acknowledging disk-durable data.
+
+### `Reader`
+
+| API | Contract |
+|---|---|
+| `Reader(path)` | Opens and validates one immutable committed snapshot. |
+| `range(series, start, end)` | Returns all inclusive-range points as `(timestamp, value)` tuples. |
+| `aggregate(series, start, end)` | Returns an `Aggregate` without materializing points. |
+| `refresh()` | Adopts a newer complete generation and returns whether it changed. |
+| `close()` | Releases the native mapping; repeated calls are harmless. |
+
+`Reader` is a context manager. Its current allocating range API favors Python
+ergonomics; use the C, Go, or Zig surfaces when caller-bounded query buffers are
+required.
 
 See [durability and recovery](../durability.md) and the
 [migration guide](../migration.md) for operational behavior outside the Python

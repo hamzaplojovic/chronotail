@@ -134,7 +134,7 @@ def check_assets() -> None:
 
 def main() -> None:
     version = version_from(ROOT / "build.zig.zon")
-    pyproject = (ROOT / "python/pyproject.toml").read_text()
+    pyproject = (ROOT / "clients/python/pyproject.toml").read_text()
     release_notes = (ROOT / "RELEASE_NOTES.md").read_text()
     assert f'version = "{version}"' in pyproject
     assert f"Chronotail {version}" in release_notes
@@ -156,8 +156,29 @@ def main() -> None:
             ROOT / "src/internal/format.zig"
         ).read_text()
         assert "ABI_VERSION = 2" in (
-            ROOT / "python/src/chronotail/__init__.py"
+            ROOT / "clients/python/src/chronotail/__init__.py"
         ).read_text()
+
+    assert (ROOT / "go.mod").read_text().startswith(
+        "module github.com/hamzaplojovic/chronotail/v2\n"
+    )
+    for path in (
+        "clients/README.md",
+        "clients/go/chronotail.go",
+        "clients/go/native.go",
+        "clients/go/errors.go",
+        "clients/go/chronotail_test.go",
+        "clients/go/cmd/smoke/main.go",
+        "clients/c/example.c",
+        "clients/python/pyproject.toml",
+        "clients/python/tests/test_client.py",
+        "docs/clients/index.md",
+        "docs/clients/go.md",
+        "docs/clients/python.md",
+        "docs/clients/c.md",
+        "docs/clients/zig.md",
+    ):
+        assert (ROOT / path).is_file(), f"missing client surface: {path}"
 
     run_id = check_current_benchmark()
     check_assets()
