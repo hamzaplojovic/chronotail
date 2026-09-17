@@ -50,7 +50,12 @@ const Result = struct {
     raw_blocks: usize = 0,
     compressed_blocks: usize = 0,
     allocation_calls: usize = 0,
+    resize_calls: usize = 0,
+    remap_calls: usize = 0,
+    free_calls: usize = 0,
     allocated_bytes: usize = 0,
+    live_bytes: usize = 0,
+    peak_live_bytes: usize = 0,
     detail_a: u64 = 0,
     detail_b: u64 = 0,
 };
@@ -103,7 +108,10 @@ const Reporter = struct {
                 "\"p50_ns\":{d},\"p95_ns\":{d},\"p99_ns\":{d},\"max_ns\":{d}," ++
                 "\"file_size\":{d},\"bytes_per_point\":{d:.6}," ++
                 "\"raw_blocks\":{d},\"compressed_blocks\":{d}," ++
-                "\"allocation_calls\":{d},\"allocated_bytes\":{d}," ++
+                "\"allocation_calls\":{d},\"resize_calls\":{d}," ++
+                "\"remap_calls\":{d},\"free_calls\":{d}," ++
+                "\"allocated_bytes\":{d},\"live_bytes\":{d}," ++
+                "\"peak_live_bytes\":{d}," ++
                 "\"detail_a\":{d},\"detail_b\":{d}}}\n",
             .{
                 result.group,
@@ -128,7 +136,12 @@ const Reporter = struct {
                 result.raw_blocks,
                 result.compressed_blocks,
                 result.allocation_calls,
+                result.resize_calls,
+                result.remap_calls,
+                result.free_calls,
                 result.allocated_bytes,
+                result.live_bytes,
+                result.peak_live_bytes,
                 result.detail_a,
                 result.detail_b,
             },
@@ -253,15 +266,95 @@ pub fn main() !void {
         "internal performance matrix: points={d} repetitions={d} output={s}\n",
         .{ config.points, config.repetitions, config.output_path },
     );
-    try runAppendMatrix(allocator, config, &reporter);
-    try runStorageMatrix(allocator, config, &reporter);
-    try runQueryMatrix(allocator, config, &reporter);
-    try runSeriesLookupMatrix(allocator, config, &reporter);
-    try runCheckpointMatrix(allocator, config, &reporter);
-    try runControlPlaneMatrix(allocator, config, &reporter);
-    try runAllocationMatrix(config, &reporter);
-    try runParallelReaderMatrix(allocator, config, &reporter);
+    for (0..config.repetitions) |repetition| {
+        std.debug.print(
+            "matrix repetition {d}/{d}\n",
+            .{ repetition + 1, config.repetitions },
+        );
+        try runAppendMatrix(allocator, config, &reporter);
+        try runStorageMatrix(allocator, config, &reporter);
+        try runQueryMatrix(allocator, config, &reporter);
+        try runReadApiMatrix(allocator, config, &reporter);
+        try runAggregateMatrix(allocator, config, &reporter);
+        try runSeriesLookupMatrix(allocator, config, &reporter);
+        try runCheckpointMatrix(allocator, config, &reporter);
+        try runControlPlaneMatrix(allocator, config, &reporter);
+        try runAllocationMatrix(config, &reporter);
+        try runParallelReaderMatrix(allocator, config, &reporter);
+    }
     std.debug.print("internal performance matrix complete: {s}\n", .{config.output_path});
+}
+
+fn runReadApiMatrix(
+    allocator: std.mem.Allocator,
+    config: Config,
+    reporter: *Reporter,
+) !void {
+    std.debug.print("phase: bounded-read-apis\n", .{});
+    const dataset = try makeDataset(allocator, config.points, .irregular, .random);
+    defer dataset.deinit(allocator);
+    const path = ".profile-internal-read-apis.ctdb";
+    deleteFile(path);
+    defer deleteFile(path);
+    try writeDataset(allocator, path, .raw, dataset, 4_096);
+    var reader = try chronotail.Reader.open(allocator, path);
+    defer reader.close();
+    const handle = try reader.prepare("telemetry");
+
+    inline for (.{ 16, 128, 1_024, 4_096 }) |capacity| {
+        var output_timestamps: [capacity]i64 = undefined;
+        var output_values: [capacity]f64 = undefined;
+        const repetitions: usize = if (config.quick) 1 else 10;
+        var digest: u64 = 0;
+        var timer = try std.time.Timer.start();
+        for (0..repetitions) |_| {
+            var cursor = try reader.cursorPrepared(
+                handle,
+                dataset.timestamps[0],
+                dataset.timestamps[dataset.timestamps.len - 1],
+            );
+            while (true) {
+                const count = try reader.cursorNext(
+                    &cursor,
+                    &output_timestamps,
+                    &output_values,
+                );
+                if (count == 0) break;
+                digest +%= @bitCast(output_values[count - 1]);
+            }
+        }
+        const elapsed = timer.read();
+        std.mem.doNotOptimizeAway(digest);
+        try reporter.emit(rateResult(.{
+            .group = "query",
+            .name = "cursor-full-range",
+            .codec = "raw",
+            .batch_size = capacity,
+            .operations = repetitions,
+            .points = repetitions * dataset.timestamps.len,
+            .elapsed_ns = elapsed,
+        }));
+    }
+
+    const borrow_count: usize = if (config.quick) 20_000 else 500_000;
+    var random_state: u64 = 0x243f6a8885a308d3;
+    var digest: u64 = 0;
+    var timer = try std.time.Timer.start();
+    for (0..borrow_count) |_| {
+        random_state = nextRandom(random_state);
+        const point_index = random_state % dataset.timestamps.len;
+        const view = try reader.borrowRawPage(handle, dataset.timestamps[point_index]);
+        digest +%= @bitCast(view.values[point_index % view.values.len]);
+    }
+    const elapsed = timer.read();
+    std.mem.doNotOptimizeAway(digest);
+    try reporter.emit(rateResult(.{
+        .group = "query",
+        .name = "borrow-raw-page",
+        .codec = "raw",
+        .operations = borrow_count,
+        .elapsed_ns = elapsed,
+    }));
 }
 
 fn parseArgs(allocator: std.mem.Allocator) !Config {
@@ -303,39 +396,36 @@ fn runAppendMatrix(
     defer dataset.deinit(allocator);
     inline for (.{ chronotail.Codec.raw, chronotail.Codec.compressed }) |codec| {
         for (batch_sizes) |batch_size| {
-            var repetition: usize = 0;
-            while (repetition < config.repetitions) : (repetition += 1) {
-                const path = ".profile-internal-append.ctdb";
-                deleteFile(path);
-                defer deleteFile(path);
-                var writer = try chronotail.Appender.create(allocator, path, codec);
-                var timer = try std.time.Timer.start();
-                var offset: usize = 0;
-                while (offset < config.points) {
-                    const end = @min(offset + batch_size, config.points);
-                    try writer.appendBatch(
-                        "telemetry",
-                        dataset.timestamps[offset..end],
-                        dataset.values[offset..end],
-                    );
-                    offset = end;
-                }
-                try writer.close();
-                const elapsed = timer.read();
-                try reporter.emit(rateResult(.{
-                    .group = "append",
-                    .name = "batch",
-                    .codec = @tagName(codec),
-                    .timestamp_pattern = "dense",
-                    .value_pattern = "smooth",
-                    .series_count = 1,
-                    .batch_size = batch_size,
-                    .operations = config.points,
-                    .points = config.points,
-                    .elapsed_ns = elapsed,
-                    .file_size = try fileSize(path),
-                }));
+            const path = ".profile-internal-append.ctdb";
+            deleteFile(path);
+            defer deleteFile(path);
+            var writer = try chronotail.Appender.create(allocator, path, codec);
+            var timer = try std.time.Timer.start();
+            var offset: usize = 0;
+            while (offset < config.points) {
+                const end = @min(offset + batch_size, config.points);
+                try writer.appendBatch(
+                    "telemetry",
+                    dataset.timestamps[offset..end],
+                    dataset.values[offset..end],
+                );
+                offset = end;
             }
+            try writer.close();
+            const elapsed = timer.read();
+            try reporter.emit(rateResult(.{
+                .group = "append",
+                .name = "batch",
+                .codec = @tagName(codec),
+                .timestamp_pattern = "dense",
+                .value_pattern = "smooth",
+                .series_count = 1,
+                .batch_size = batch_size,
+                .operations = config.points,
+                .points = config.points,
+                .elapsed_ns = elapsed,
+                .file_size = try fileSize(path),
+            }));
         }
     }
 
@@ -644,6 +734,12 @@ fn runSeriesLookupMatrix(
         defer reader.close();
         var timestamps: [1]i64 = undefined;
         var values: [1]f64 = undefined;
+        var handles: [256]chronotail.SeriesHandle = undefined;
+        for (0..series_count) |series_index| {
+            handles[series_index] = try reader.prepare(
+                names[series_index][0..name_lengths[series_index]],
+            );
+        }
         const query_count: usize = if (config.quick) 20_000 else 500_000;
         var state: u64 = 0xa0761d6478bd642f;
         var digest: u64 = 0;
@@ -673,6 +769,118 @@ fn runSeriesLookupMatrix(
             .width = 1,
             .operations = query_count,
             .points = query_count,
+            .elapsed_ns = elapsed,
+        }));
+
+        state = 0xa0761d6478bd642f;
+        digest = 0;
+        timer.reset();
+        for (0..query_count) |_| {
+            state = nextRandom(state);
+            const series_index = state % series_count;
+            state = nextRandom(state);
+            const point_index = state % points_per_series;
+            const found = try reader.rangePreparedInto(
+                handles[series_index],
+                @intCast(point_index),
+                @intCast(point_index),
+                &timestamps,
+                &values,
+            );
+            if (found != 1) return error.UnexpectedQueryResult;
+            digest +%= @bitCast(values[0]);
+        }
+        const prepared_elapsed = timer.read();
+        std.mem.doNotOptimizeAway(digest);
+        try reporter.emit(rateResult(.{
+            .group = "query",
+            .name = "prepared-series-point",
+            .codec = "raw",
+            .series_count = series_count,
+            .width = 1,
+            .operations = query_count,
+            .points = query_count,
+            .elapsed_ns = prepared_elapsed,
+        }));
+    }
+}
+
+fn runAggregateMatrix(
+    allocator: std.mem.Allocator,
+    config: Config,
+    reporter: *Reporter,
+) !void {
+    std.debug.print("phase: aggregates\n", .{});
+    const dataset = try makeDataset(allocator, config.points, .dense, .smooth);
+    defer dataset.deinit(allocator);
+    const widths = [_]usize{ 100, 10_000, config.points };
+    inline for (.{ chronotail.Codec.raw, chronotail.Codec.compressed }) |codec| {
+        const path = ".profile-internal-aggregate.ctdb";
+        deleteFile(path);
+        defer deleteFile(path);
+        try writeDataset(allocator, path, codec, dataset, 4_096);
+        var reader = try chronotail.Reader.open(allocator, path);
+        defer reader.close();
+        const handle = try reader.prepare("telemetry");
+        for (widths) |requested_width| {
+            const width = @min(requested_width, config.points);
+            const query_count = queryCount(config, width, codec);
+            var state: u64 = 0x8ebc6af09c88c6e3;
+            var digest: u64 = 0;
+            var timer = try std.time.Timer.start();
+            for (0..query_count) |_| {
+                state = nextRandom(state);
+                const start_index = state % (config.points - width + 1);
+                const result = try reader.aggregatePrepared(
+                    handle,
+                    dataset.timestamps[start_index],
+                    dataset.timestamps[start_index + width - 1],
+                );
+                if (result.count != width) return error.UnexpectedQueryResult;
+                digest +%= @bitCast(result.sum);
+            }
+            const elapsed = timer.read();
+            std.mem.doNotOptimizeAway(digest);
+            try reporter.emit(rateResult(.{
+                .group = "aggregate",
+                .name = "summary-tree",
+                .codec = @tagName(codec),
+                .width = width,
+                .operations = query_count,
+                .points = query_count * width,
+                .elapsed_ns = elapsed,
+            }));
+        }
+
+        // A resolution wider than a data page exercises subtree-summary skipping;
+        // tiny windows deliberately devolve to boundary-page decoding.
+        const window_count: usize = 10;
+        const resolution: u64 = @intCast(config.points / window_count);
+        const windows = try allocator.alloc(chronotail.Aggregate, window_count);
+        defer allocator.free(windows);
+        const iterations: usize = if (config.quick) 100 else 10_000;
+        var digest: u64 = 0;
+        var timer = try std.time.Timer.start();
+        for (0..iterations) |_| {
+            const found = try reader.aggregateWindowsPrepared(
+                handle,
+                dataset.timestamps[0],
+                dataset.timestamps[dataset.timestamps.len - 1],
+                resolution,
+                windows,
+            );
+            if (found != window_count) return error.UnexpectedQueryResult;
+            digest +%= @bitCast(windows[window_count - 1].sum);
+        }
+        const elapsed = timer.read();
+        std.mem.doNotOptimizeAway(digest);
+        try reporter.emit(rateResult(.{
+            .group = "aggregate",
+            .name = "resolution-windows",
+            .codec = @tagName(codec),
+            .width = resolution,
+            .operations = iterations * window_count,
+            .points = iterations * config.points,
             .elapsed_ns = elapsed,
         }));
     }
@@ -898,20 +1106,14 @@ fn runAllocationMatrix(config: Config, reporter: *Reporter) !void {
     deleteFile(path);
     defer deleteFile(path);
     var writer = try chronotail.Appender.create(allocator, path, .raw);
+    try writer.prepareSeries("telemetry", count);
     counter.resetMeasurements();
     try writer.appendBatch("telemetry", dataset.timestamps, dataset.values);
-    try reporter.emit(.{
-        .group = "allocation",
-        .name = "append-after-create",
-        .codec = "raw",
-        .operations = count,
-        .points = count,
-        .allocation_calls = counter.allocation_calls,
-        .allocated_bytes = counter.allocated_bytes,
-    });
+    try emitAllocationResult(reporter, "append-after-create", count, count, &counter);
     try writer.close();
 
     var reader = try chronotail.Reader.open(allocator, path);
+    const handle = try reader.prepare("telemetry");
     const timestamps: [100]i64 = undefined;
     const values: [100]f64 = undefined;
     var output_timestamps = timestamps;
@@ -929,16 +1131,134 @@ fn runAllocationMatrix(config: Config, reporter: *Reporter) !void {
         );
     }
     std.mem.doNotOptimizeAway(digest);
+    try emitAllocationResult(reporter, "warm-query", 10_000, 1_000_000, &counter);
+
+    counter.resetMeasurements();
+    digest = 0;
+    for (0..10_000) |query_index| {
+        const start: i64 = @intCast(query_index % (count - 100));
+        digest +%= try reader.rangePreparedInto(
+            handle,
+            start,
+            start + 99,
+            &output_timestamps,
+            &output_values,
+        );
+    }
+    std.mem.doNotOptimizeAway(digest);
+    try emitAllocationResult(reporter, "prepared-query", 10_000, 1_000_000, &counter);
+
+    counter.resetMeasurements();
+    var cursor = try reader.cursorPrepared(handle, 0, @intCast(count - 1));
+    digest = 0;
+    while (true) {
+        const found = try reader.cursorNext(&cursor, &output_timestamps, &output_values);
+        if (found == 0) break;
+        digest +%= @bitCast(output_values[found - 1]);
+    }
+    std.mem.doNotOptimizeAway(digest);
+    try emitAllocationResult(
+        reporter,
+        "persistent-cursor",
+        (count + output_values.len - 1) / output_values.len,
+        count,
+        &counter,
+    );
+
+    counter.resetMeasurements();
+    digest = 0;
+    const borrow_iterations: usize = if (config.quick) 10_000 else 100_000;
+    for (0..borrow_iterations) |borrow_index| {
+        const point_index = borrow_index % count;
+        const borrowed = try reader.borrowRawPage(handle, @intCast(point_index));
+        digest +%= @bitCast(borrowed.values[point_index % borrowed.values.len]);
+    }
+    std.mem.doNotOptimizeAway(digest);
+    try emitAllocationResult(
+        reporter,
+        "borrow-raw-page",
+        borrow_iterations,
+        borrow_iterations,
+        &counter,
+    );
+
+    counter.resetMeasurements();
+    digest = 0;
+    const aggregate_iterations: usize = if (config.quick) 10_000 else 100_000;
+    for (0..aggregate_iterations) |_| {
+        const aggregate = try reader.aggregatePrepared(handle, 0, @intCast(count - 1));
+        digest +%= @bitCast(aggregate.sum);
+    }
+    std.mem.doNotOptimizeAway(digest);
+    try emitAllocationResult(
+        reporter,
+        "aggregate-summary",
+        aggregate_iterations,
+        aggregate_iterations * count,
+        &counter,
+    );
+
+    counter.resetMeasurements();
+    digest = 0;
+    var windows: [10]chronotail.Aggregate = undefined;
+    const resolution: u64 = @intCast(count / windows.len);
+    const window_iterations: usize = if (config.quick) 1_000 else 10_000;
+    for (0..window_iterations) |_| {
+        const found = try reader.aggregateWindowsPrepared(
+            handle,
+            0,
+            @intCast(count - 1),
+            resolution,
+            &windows,
+        );
+        if (found != windows.len) return error.UnexpectedQueryResult;
+        digest +%= @bitCast(windows[windows.len - 1].sum);
+    }
+    std.mem.doNotOptimizeAway(digest);
+    try emitAllocationResult(
+        reporter,
+        "aggregate-windows",
+        window_iterations * windows.len,
+        window_iterations * count,
+        &counter,
+    );
+
+    counter.resetMeasurements();
+    const refresh_iterations: usize = if (config.quick) 10_000 else 100_000;
+    for (0..refresh_iterations) |_| {
+        if (try reader.refresh()) return error.UnexpectedRefresh;
+    }
+    try emitAllocationResult(
+        reporter,
+        "unchanged-refresh",
+        refresh_iterations,
+        0,
+        &counter,
+    );
+    reader.close();
+}
+
+fn emitAllocationResult(
+    reporter: *Reporter,
+    name: []const u8,
+    operations: usize,
+    points: usize,
+    counter: *const CountingAllocator,
+) !void {
     try reporter.emit(.{
         .group = "allocation",
-        .name = "warm-query",
+        .name = name,
         .codec = "raw",
-        .operations = 10_000,
-        .points = 1_000_000,
+        .operations = operations,
+        .points = points,
         .allocation_calls = counter.allocation_calls,
+        .resize_calls = counter.resize_calls,
+        .remap_calls = counter.remap_calls,
+        .free_calls = counter.free_calls,
         .allocated_bytes = counter.allocated_bytes,
+        .live_bytes = counter.live_bytes,
+        .peak_live_bytes = counter.peak_live_bytes,
     });
-    reader.close();
 }
 
 const ReaderThreadContext = struct {

@@ -8,15 +8,20 @@ The profiling matrix covers:
 
 - scalar and batched append across batch sizes, codecs, data patterns, and
   series cardinalities;
-- checkpoint throughput and latency, including the format-v6 snapshot boundary;
+- checkpoint throughput and latency, including legacy boundary labels retained
+  solely for matching the saved v1 baseline;
 - dense, sparse, and irregular timestamp geometry;
 - constant, smooth, spiky, and random values;
 - point and range widths from one point through full-series scans;
+- prepared-series, persistent cursor, zero-copy raw-page, aggregate, and
+  fixed-resolution query paths;
 - first-touch verification and warm mapped reads;
 - reader open, unchanged refresh, changed refresh, verification, and corrupt
   trailing-data recovery;
 - storage bytes per point and raw/compressed block selection;
-- allocator activity in steady append and query paths;
+- allocator alloc/resize/remap/free activity and live/peak bytes for prepared
+  append, copied and prepared reads, cursors, borrowed pages, aggregates,
+  aggregate windows, and unchanged refresh;
 - parallel immutable readers.
 
 Run the full matrix in ReleaseFast and save JSON Lines output:
@@ -24,13 +29,15 @@ Run the full matrix in ReleaseFast and save JSON Lines output:
 ```bash
 mkdir -p tests/performance/results
 zig build performance -Doptimize=ReleaseFast -- \
-  --output tests/performance/results/v1-baseline.jsonl
+  --output tests/performance/results/v2-candidate.jsonl
 ```
 
-Results are deliberately ignored by git. Preserve the baseline locally and
+Results are deliberately ignored by git. The first complete v1 run is preserved
+locally as `tests/performance/results/v1-baseline.jsonl`; preserve it and
 compare experiments on the same machine with alternating runs. The harness
-prints progress to stderr and writes one self-describing result per line so a
-partial run remains useful if interrupted.
+repeats the complete matrix three times by default, prints progress to stderr,
+and writes one self-describing result per line so a partial run remains useful
+if interrupted.
 
 For a short correctness/smoke pass:
 

@@ -54,7 +54,15 @@ def main() -> None:
     assert targets == [
         '  "macos-aarch64|aarch64-macos|macosx_11_0_arm64|libchronotail.dylib"'
     ]
-    check_frozen_sources()
+    if version.startswith("1."):
+        check_frozen_sources()
+    else:
+        assert 'pub const version: u8 = 7;' in (
+            ROOT / "src/internal/format.zig"
+        ).read_text()
+        assert "ABI_VERSION = 2" in (
+            ROOT / "python/src/chronotail/__init__.py"
+        ).read_text()
     run_id = check_benchmarks()
     expected_assets = (
         "architecture.svg",
@@ -69,7 +77,7 @@ def main() -> None:
         png = svg.with_suffix(".png")
         assert svg.is_file(), f"missing asset: {name}"
         assert png.is_file(), f"missing rendered asset: {png.name}"
-    print(f"release metadata valid: v{version}, macOS ARM64, benchmark {run_id}")
+    print(f"release metadata valid: v{version}, macOS ARM64, v1 benchmark {run_id}")
 
 
 if __name__ == "__main__":

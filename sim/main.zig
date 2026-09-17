@@ -92,6 +92,9 @@ const MemoryStorage = struct {
     config: SimConfig,
     last_fault: ?Fault = null,
     fault_on_sync: bool = false,
+    published_before_sync_fault: bool = false,
+    prior_generation_became_durable: bool = false,
+    last_completed_write_offset: u64 = 0,
     stats: *Stats,
 
     fn deinit(self: *MemoryStorage) void {
@@ -106,6 +109,7 @@ const MemoryStorage = struct {
     fn beforeWrite(self: *MemoryStorage, bytes: []const u8, offset: u64) !?usize {
         self.last_fault = null;
         self.fault_on_sync = false;
+        self.published_before_sync_fault = false;
         if (!self.faults_enabled) return null;
         if (self.fault_rng.chance(self.config.crash_probability)) {
             const power = (self.fault_rng.next() & 1) == 0;
@@ -142,15 +146,20 @@ const MemoryStorage = struct {
     fn sync(self: *MemoryStorage) !void {
         self.last_fault = null;
         self.fault_on_sync = false;
+        self.published_before_sync_fault = false;
         if (self.faults_enabled and self.fault_rng.chance(self.config.crash_probability)) {
             const power = (self.fault_rng.next() & 1) == 0;
             self.last_fault = if (power) .power_loss else .process_crash;
             self.fault_on_sync = true;
+            self.published_before_sync_fault =
+                self.last_completed_write_offset < chronotail.block_size;
             self.stats.crashes += 1;
             return error.SimulatedCrash;
         }
         try self.durable.resize(self.allocator, self.dirty.items.len);
         @memcpy(self.durable.items, self.dirty.items);
+        self.prior_generation_became_durable =
+            self.last_completed_write_offset >= chronotail.block_size;
     }
 
     fn crash(self: *MemoryStorage, power_loss: bool) !void {
@@ -159,6 +168,7 @@ const MemoryStorage = struct {
             @memcpy(self.dirty.items, self.durable.items);
         }
         self.last_fault = null;
+        self.prior_generation_became_durable = false;
     }
 };
 
@@ -168,6 +178,9 @@ const MemoryFile = struct {
     pub fn pwriteAll(self: MemoryFile, bytes: []const u8, offset: u64) !void {
         _ = try self.storage.beforeWrite(bytes, offset);
         try self.storage.writeBytes(bytes, offset);
+        self.storage.last_completed_write_offset = offset;
+        if (offset >= chronotail.block_size)
+            self.storage.prior_generation_became_durable = false;
     }
 
     pub fn preadAll(self: MemoryFile, output: []u8, offset: u64) !usize {
@@ -376,8 +389,11 @@ fn runSeed(
             writer.checkpoint(do_sync) catch |err| {
                 if (storage.last_fault == null)
                     return reportFailure(seed, operation, config, null, err);
-                if (storage.last_fault == .process_crash and storage.fault_on_sync)
+                if (storage.last_fault == .process_crash and
+                    storage.fault_on_sync and storage.published_before_sync_fault)
                     try model.snapshot(storage.dirty.items.len, false);
+                if (storage.prior_generation_became_durable)
+                    model.durable_generation = model.current_generation;
                 recover(
                     &writer,
                     &reader,
@@ -418,15 +434,18 @@ fn runSeed(
                 continue;
             };
             try model.snapshot(storage.dirty.items.len, false);
-            writer.close() catch |err| return reportFailure(seed, operation, config, null, err);
+            writer.close() catch |err| {
+                return reportFailure(seed, operation, config, null, err);
+            };
             writer = try SimAppender.openOn(allocator, storage.file(), config.codec);
             reader.close();
             reader = try SimReader.openOn(allocator, storage.file());
             model.reader_counts = model.history.items[model.current_generation].counts;
             stats.checkpoint_reopens += 1;
         } else if (selector < refresh_limit) {
-            const changed = reader.refresh() catch |err|
+            const changed = reader.refresh() catch |err| {
                 return reportFailure(seed, operation, config, null, err);
+            };
             if (changed) model.reader_counts = model.history.items[model.current_generation].counts;
         } else if (selector < range_limit) {
             const series_index: usize = @intCast(workload_rng.below(model.count));
@@ -436,8 +455,9 @@ fn runSeed(
                 series_index,
                 config.max_range_width,
                 &workload_rng,
-            ) catch |err|
+            ) catch |err| {
                 return reportFailure(seed, operation, config, storage.last_fault, err);
+            };
         } else {
             const series_index: usize = @intCast(workload_rng.below(model.count));
             const batch_size: usize = @intCast(
