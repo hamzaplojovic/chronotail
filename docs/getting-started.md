@@ -57,7 +57,7 @@ Build the native library first, then point the binding at it while developing:
 
 ```bash
 export CHRONOTAIL_LIBRARY="$PWD/zig-out/lib/libchronotail.dylib"
-python3 -m pip install -e python
+python3 -m pip install -e clients/python
 ```
 
 Write arrays in batches and request disk durability explicitly:
@@ -81,6 +81,61 @@ with chronotail.Reader("metrics.ctdb") as reader:
 
 The writable `array('q')` and `array('d')` inputs take the binding's direct
 buffer path. Other iterables are accepted and converted into native batches.
+
+## Go
+
+The Go client requires cgo and links the native library built above:
+
+```bash
+export CGO_LDFLAGS="-L$PWD/zig-out/lib"
+export DYLD_LIBRARY_PATH="$PWD/zig-out/lib"
+go test ./clients/go/...
+```
+
+Import the major-version-2 module path and use explicit durability:
+
+```go
+package main
+
+import (
+    "log"
+
+    chronotail "github.com/hamzaplojovic/chronotail/v2/clients/go"
+)
+
+func main() {
+    writer, err := chronotail.OpenWriter("metrics.ctdb", chronotail.CodecCompressed)
+    if err != nil {
+        log.Fatal(err)
+    }
+    if err := writer.Prepare("cpu", 3); err != nil {
+        log.Fatal(err)
+    }
+    if err := writer.Append("cpu", []int64{1000, 1001, 1002}, []float64{42.5, 43.1, 42.8}); err != nil {
+        log.Fatal(err)
+    }
+    if err := writer.Checkpoint(chronotail.DurabilityDisk); err != nil {
+        log.Fatal(err)
+    }
+    if err := writer.Close(); err != nil {
+        log.Fatal(err)
+    }
+
+    reader, err := chronotail.OpenReader("metrics.ctdb")
+    if err != nil {
+        log.Fatal(err)
+    }
+    defer reader.Close()
+    points, err := reader.Range("cpu", 1000, 1002)
+    if err != nil {
+        log.Fatal(err)
+    }
+    log.Print(points)
+}
+```
+
+Use `RangeInto` or `Cursor` instead of `Range` when query memory must be
+caller-bounded.
 
 ## Zig
 
@@ -142,4 +197,5 @@ opens or creates an append target according to the engine's normal file rules.
   layer.
 
 Continue with [durability and recovery](durability.md), then choose the
-[Zig](api/zig.md), [C](api/c.md), or [Python](api/python.md) API guide.
+[Go](clients/go.md), [Python](clients/python.md), [C](clients/c.md), or
+[Zig](clients/zig.md) client guide.

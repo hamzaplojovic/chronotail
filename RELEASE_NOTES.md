@@ -1,3 +1,15 @@
+# Chronotail 2.1.0 — unreleased
+
+- Added an idiomatic Go client over C ABI v2 with batches, explicit durability,
+  immutable snapshots, bounded range buffers, prepared series, cursors,
+  aggregates, zero-copy raw pages, and typed status errors.
+- Unified language packages under `clients/`; the Python source package now
+  lives at `clients/python` without changing its import name or wheel layout.
+- Added complete Go, Python, C, and Zig client guides and API references under
+  `docs/clients`.
+- Release artifacts now include client sources and smoke-test both the bundled
+  Python wheel and a standalone Go consumer.
+
 # Chronotail 2.0.0
 
 Chronotail 2.0.0 replaces the storage kernel with portable format v7 and C ABI

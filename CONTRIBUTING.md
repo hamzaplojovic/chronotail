@@ -41,7 +41,14 @@ Interface changes require their matching checks:
 
 ```bash
 zig build -Doptimize=ReleaseFast
-python3 -m py_compile python/src/chronotail/__init__.py
+python3 -m py_compile clients/python/src/chronotail/__init__.py
+CHRONOTAIL_LIBRARY="$PWD/zig-out/lib/libchronotail.dylib" \
+PYTHONPATH="$PWD/clients/python/src" \
+python3 -m unittest discover clients/python/tests
+export CGO_LDFLAGS="-L$PWD/zig-out/lib"
+export DYLD_LIBRARY_PATH="$PWD/zig-out/lib"
+go vet ./clients/go/...
+go test ./clients/go/...
 python3 scripts/check-release.py
 ```
 

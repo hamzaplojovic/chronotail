@@ -3,9 +3,9 @@
 ## Supported versions
 
 Chronotail 1.x on macOS ARM64 receives correctness and security fixes within its
-frozen format-v6 and C-ABI-v1 boundaries. Chronotail 2.0.0 is currently
-prerelease source using format v7 and C ABI v2; security reports are welcome,
-but published support starts only with a signed release record and artifacts.
+frozen format-v6 and C-ABI-v1 boundaries. Chronotail 2.0.0 is the current stable
+format-v7/C-ABI-v2 release on macOS ARM64. The 2.1.0 source line is unreleased;
+it does not add a platform claim beyond the native artifact matrix.
 
 ## Report a vulnerability
 
@@ -38,7 +38,8 @@ The highest-risk areas are:
 - index traversal, summaries, codecs, and overlapping physical-range checks;
 - C buffer lengths, handle kinds, generation-bound cursors, and borrowed-pointer
   lifetimes;
-- Python native-library discovery and ABI verification;
+- Go/Python native-library discovery, linking, ABI verification, and borrowed
+  native-memory lifetimes;
 - exclusive writer locking and safe reader refresh.
 
 An identity proves exact bytes, not trust or semantic validity. Callers must

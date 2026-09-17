@@ -15,9 +15,9 @@ dist/
 *.a
 __pycache__/
 *.pyc
-python/build/
-python/dist/
-python/src/chronotail/_native/
+clients/python/build/
+clients/python/dist/
+clients/python/src/chronotail/_native/
 bench/competitive/build/
 bench/competitive/vendor/
 bench/competitive/work/

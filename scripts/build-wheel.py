@@ -34,7 +34,9 @@ def main() -> None:
     output = Path(sys.argv[3])
     filename = f"chronotail-{VERSION}-py3-none-{platform}.whl"
     files = {
-        "chronotail/__init__.py": (ROOT / "python/src/chronotail/__init__.py").read_bytes(),
+        "chronotail/__init__.py": (
+            ROOT / "clients/python/src/chronotail/__init__.py"
+        ).read_bytes(),
         f"chronotail/_native/{native.name}": native.read_bytes(),
         f"{DIST_INFO}/METADATA": (
             f"Metadata-Version: 2.1\nName: chronotail\nVersion: {VERSION}\n"

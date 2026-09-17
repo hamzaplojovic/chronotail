@@ -12,6 +12,10 @@ clang -std=c11 app.c \
   -o app
 ```
 
+For an extracted release archive, replace `zig-out/include` and `zig-out/lib`
+with its `include` and `lib` directories. Add the release `lib` directory to
+`DYLD_LIBRARY_PATH` when the executable does not embed an rpath.
+
 The header is authoritative for exact signatures, layouts, status values, and
 lifetime contracts. No Zig type or allocator crosses the boundary.
 
@@ -157,3 +161,29 @@ close it twice.
 ABI v2 is not binary-compatible with C ABI v1. The original operation names are
 retained where their source-level contracts still apply. Migration is exposed
 through the CLI and Zig API, not the C ABI.
+
+## API reference
+
+| Symbol | Contract |
+|---|---|
+| `ct_abi_version` | Returns the loaded ABI version; current clients require `2`. |
+| `ct_error_string` | Returns static display text for a status code. |
+| `ct_open_writer` | Opens or creates a writer with raw or adaptive compression. |
+| `ct_prepare_append` | Declares the per-series bound before the next checkpoint. |
+| `ct_append` | Validates and appends one timestamp/value batch. |
+| `ct_checkpoint_with_durability` | Publishes with `CT_DURABILITY_MEMORY` or `CT_DURABILITY_DISK`. |
+| `ct_checkpoint` | Compatibility convenience accepting a boolean sync flag. |
+| `ct_open_reader` | Opens and validates one immutable snapshot. |
+| `ct_refresh` | Adopts a newer complete generation and reports whether it changed. |
+| `ct_range` | Copies a named-series prefix and returns total required capacity. |
+| `ct_prepare_series` | Resolves a series to a generation-bound handle. |
+| `ct_range_prepared` | Performs the copied range using a prepared handle. |
+| `ct_aggregate` / `ct_aggregate_prepared` | Computes count/min/max/sum/first/last. |
+| `ct_cursor_init` / `ct_cursor_next` | Streams a range through fixed caller buffers. |
+| `ct_borrow_raw_page` | Borrows snapshot-owned raw column pointers. |
+| `ct_close` | Consumes a reader or writer handle even when teardown reports an error. |
+
+The enum values and structure layouts in
+[`include/chronotail.h`](../../include/chronotail.h) are authoritative. All
+lengths are byte or element counts as documented by their parameter names;
+strings are not required to be NUL-terminated.

@@ -4,6 +4,12 @@ The package binds Chronotail C ABI v2 with the Python standard library only.
 The validated macOS ARM64 wheel bundles `libchronotail.dylib`; no third-party
 runtime package is required.
 
+From an extracted release archive:
+
+```bash
+python3 -m pip install python/chronotail-2.1.0-py3-none-macosx_11_0_arm64.whl
+```
+
 ## Quick start
 
 ```python
@@ -27,6 +33,14 @@ Writable `array('q')` and `array('d')` values use the direct buffer path.
 Readers hold immutable snapshots and adopt newer complete checkpoints only when
 `refresh()` is called.
 
+Run the standard-library integration suite against a development build:
+
+```bash
+CHRONOTAIL_LIBRARY="$PWD/zig-out/lib/libchronotail.dylib" \
+PYTHONPATH="$PWD/clients/python/src" \
+python3 -m unittest discover clients/python/tests
+```
+
 For installation, batching, errors, library discovery, and exact API contracts,
-read the [Python API guide](../docs/api/python.md). The project
-[getting-started guide](../docs/getting-started.md) includes the native build.
+read the [Python API guide](../../docs/clients/python.md). The project
+[getting-started guide](../../docs/getting-started.md) includes the native build.

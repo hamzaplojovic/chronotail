@@ -43,4 +43,16 @@ with chronotail.Reader("python.ctdb") as db:
 PY
 
 chronotail verify python.ctdb | grep -q 'records: 3'
+
+clang -std=c11 "$release/clients/c/example.c" \
+  -I"$release/include" \
+  -L"$release/lib" -lchronotail \
+  -Wl,-rpath,"$release/lib" \
+  -o "$work/c-client-smoke"
+"$work/c-client-smoke"
+
+(
+  cd "$release"
+  CGO_LDFLAGS="-L$release/lib" go run ./clients/go/cmd/smoke
+)
 printf 'SMOKE TEST PASSED: %s\n' "$(basename "$archive")"

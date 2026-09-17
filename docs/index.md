@@ -17,12 +17,16 @@ and gives readers immutable committed snapshots while one writer appends.
 - [Competitive benchmarks](../BENCHMARKS.md) — current public evidence,
   methodology, raw records, caveats, and measured losses.
 
-## API guides
+## Client guides
 
-- [Zig](api/zig.md) — complete native API, including prepared series, cursors,
+- [Client overview](clients/index.md) — compare installation, ownership, and
+  memory models across every supported language surface.
+- [Go](clients/go.md) — idiomatic writer/reader APIs, bounded buffers, prepared
+  series, cursors, borrowed pages, and typed errors.
+- [Zig](clients/zig.md) — complete native API, including prepared series, cursors,
   borrowed raw pages, aggregates, and verification.
-- [C](api/c.md) — ABI v2 lifecycle, buffer sizing, errors, and ownership.
-- [Python](api/python.md) — installation, batched writes, snapshots, ranges, and
+- [C](clients/c.md) — ABI v2 lifecycle, buffer sizing, errors, and ownership.
+- [Python](clients/python.md) — installation, batched writes, snapshots, ranges, and
   aggregates.
 - [CLI](getting-started.md#command-line) — append, range, verify, inspect, and
   migrate from a terminal.
@@ -44,7 +48,7 @@ and gives readers immutable committed snapshots while one writer appends.
 
 ## Current compatibility
 
-The current source version is 2.0.0, using portable file format v7 and C ABI v2.
+The current source version is 2.1.0, using portable file format v7 and C ABI v2.
 Format v6 and C ABI v1 remain frozen release boundaries for Chronotail 1.x.
 Current code recognizes v6 only as migration input and never rewrites a v6 file
 in place. macOS ARM64 is the only release target validated so far.

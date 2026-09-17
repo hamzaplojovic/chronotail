@@ -28,6 +28,21 @@ for target_spec in "${CHRONOTAIL_RELEASE_TARGETS[@]}"; do
     "$ROOT/RELEASE_NOTES.md" \
     "$package/"
   cp -R "$ROOT/docs/." "$package/docs/"
+  mkdir -p "$package/clients/python/src/chronotail" "$package/clients/python/tests"
+  cp "$ROOT/clients/README.md" "$package/clients/"
+  cp -R "$ROOT/clients/c" "$ROOT/clients/go" "$ROOT/clients/zig" "$package/clients/"
+  cp \
+    "$ROOT/clients/python/MANIFEST.in" \
+    "$ROOT/clients/python/README.md" \
+    "$ROOT/clients/python/pyproject.toml" \
+    "$package/clients/python/"
+  cp \
+    "$ROOT/clients/python/src/chronotail/__init__.py" \
+    "$package/clients/python/src/chronotail/"
+  cp \
+    "$ROOT/clients/python/tests/test_client.py" \
+    "$package/clients/python/tests/"
+  cp "$ROOT/go.mod" "$package/"
   cp "$ROOT/scripts/smoke-release.sh" "$package/smoke-test.sh"
 
   python3 "$ROOT/scripts/build-wheel.py" \
