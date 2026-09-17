@@ -983,7 +983,15 @@ def render_charts(out: pathlib.Path, summary_rows: list[dict[str, object]]) -> N
 
 
 def write_checksums(out: pathlib.Path) -> None:
-    names = ["raw.jsonl", "summary.csv", "matrix.json", "environment.json", "BENCHMARKS.md", *CHARTS]
+    names = [
+        "raw.jsonl",
+        "summary.csv",
+        "matrix.json",
+        "environment.json",
+        "commands.log",
+        "BENCHMARKS.md",
+        *CHARTS,
+    ]
     lines = [f"{sha256(out / name)}  {name}" for name in names]
     (out / "SHA256SUMS").write_text("\n".join(lines) + "\n")
 
