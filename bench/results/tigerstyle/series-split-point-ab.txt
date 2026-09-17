@@ -1,0 +1,12 @@
+baseline-1
+width=1 queries=3000000 queries_per_second=6605053.131 points_per_second=6605053.131
+split-1
+width=1 queries=3000000 queries_per_second=6015976.436 points_per_second=6015976.436
+baseline-2
+width=1 queries=3000000 queries_per_second=7017894.754 points_per_second=7017894.754
+split-2
+width=1 queries=3000000 queries_per_second=7826863.681 points_per_second=7826863.681
+baseline-3
+width=1 queries=3000000 queries_per_second=8781085.338 points_per_second=8781085.338
+split-3
+width=1 queries=3000000 queries_per_second=8389571.615 points_per_second=8389571.615

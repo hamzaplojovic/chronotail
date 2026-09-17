@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="595" viewBox="0 0 900 595">
+<style>text{font-family:system-ui,sans-serif;font-size:14px}.title{font-size:20px;font-weight:600}.value{font-weight:600}</style>
+<text class="title" x="20" y="30">Aggregate reader throughput while writing</text>
+<text x="20" y="80">1 readers / chronotail</text>
+<rect x="210" y="60" width="167.0" height="28" rx="3" fill="#2563eb"/>
+<text class="value" x="387.0" y="80">2320.58 k queries/s</text>
+<text x="20" y="135">1 readers / nanots</text>
+<rect x="210" y="115" width="6.8" height="28" rx="3" fill="#ea580c"/>
+<text class="value" x="226.8" y="135">95.09 k queries/s</text>
+<text x="20" y="190">1 readers / sqlite</text>
+<rect x="210" y="170" width="7.1" height="28" rx="3" fill="#16a34a"/>
+<text class="value" x="227.1" y="190">99.05 k queries/s</text>
+<text x="20" y="245">8 readers / chronotail</text>
+<rect x="210" y="225" width="604.0" height="28" rx="3" fill="#2563eb"/>
+<text class="value" x="824.0" y="245">8392.51 k queries/s</text>
+<text x="20" y="300">8 readers / nanots</text>
+<rect x="210" y="280" width="4.7" height="28" rx="3" fill="#ea580c"/>
+<text class="value" x="224.7" y="300">64.82 k queries/s</text>
+<text x="20" y="355">8 readers / sqlite</text>
+<rect x="210" y="335" width="19.2" height="28" rx="3" fill="#16a34a"/>
+<text class="value" x="239.2" y="355">266.34 k queries/s</text>
+<text x="20" y="410">32 readers / chronotail</text>
+<rect x="210" y="390" width="620.0" height="28" rx="3" fill="#2563eb"/>
+<text class="value" x="840.0" y="410">8614.43 k queries/s</text>
+<text x="20" y="465">32 readers / nanots</text>
+<rect x="210" y="445" width="3.9" height="28" rx="3" fill="#ea580c"/>
+<text class="value" x="223.9" y="465">53.74 k queries/s</text>
+<text x="20" y="520">32 readers / sqlite</text>
+<rect x="210" y="500" width="25.6" height="28" rx="3" fill="#16a34a"/>
+<text class="value" x="245.6" y="520">355.41 k queries/s</text>
+</svg>

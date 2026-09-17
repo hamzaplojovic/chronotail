@@ -1,0 +1,20 @@
+pre-single-1
+series=1 records_per_second=11854729.780
+tiger-single-1
+series=1 records_per_second=14089143.899
+pre-single-2
+series=1 records_per_second=12491380.947
+tiger-single-2
+series=1 records_per_second=13411892.007
+pre-single-3
+series=1 records_per_second=15007063.637
+tiger-single-3
+series=1 records_per_second=12907862.227
+pre-single-4
+series=1 records_per_second=11221401.907
+tiger-single-4
+series=1 records_per_second=15408684.556
+pre-single-5
+series=1 records_per_second=18140878.902
+tiger-single-5
+series=1 records_per_second=16308706.408

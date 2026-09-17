@@ -1,0 +1,48 @@
+scalar-1-64
+batch=64 records_per_second=26496950.800
+vector-1-64
+batch=64 records_per_second=25391311.855
+scalar-1-512
+batch=512 records_per_second=20628009.433
+vector-1-512
+batch=512 records_per_second=26629748.958
+scalar-1-4096
+batch=4096 records_per_second=24248356.478
+vector-1-4096
+batch=4096 records_per_second=25373758.121
+scalar-1-65536
+batch=65536 records_per_second=27045773.257
+vector-1-65536
+batch=65536 records_per_second=28033767.581
+scalar-2-64
+batch=64 records_per_second=27802819.623
+vector-2-64
+batch=64 records_per_second=28209371.365
+scalar-2-512
+batch=512 records_per_second=25345327.489
+vector-2-512
+batch=512 records_per_second=22372421.963
+scalar-2-4096
+batch=4096 records_per_second=26580204.239
+vector-2-4096
+batch=4096 records_per_second=28527343.637
+scalar-2-65536
+batch=65536 records_per_second=27895494.206
+vector-2-65536
+batch=65536 records_per_second=25344805.497
+scalar-3-64
+batch=64 records_per_second=26227260.942
+vector-3-64
+batch=64 records_per_second=26191723.415
+scalar-3-512
+batch=512 records_per_second=27696905.353
+vector-3-512
+batch=512 records_per_second=27083178.875
+scalar-3-4096
+batch=4096 records_per_second=30235637.724
+vector-3-4096
+batch=4096 records_per_second=28537818.441
+scalar-3-65536
+batch=65536 records_per_second=23831172.841
+vector-3-65536
+batch=65536 records_per_second=25400956.770

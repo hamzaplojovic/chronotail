@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="483"
+ viewBox="0 0 1080 483" role="img" aria-label="Writer throughput under reader load">
+<style>
+ text { font-family: ui-sans-serif, system-ui, sans-serif; fill: #172033; }
+ .title { font-size: 22px; font-weight: 700; }
+ .subtitle { font-size: 13px; fill: #59667d; }
+ .label { font-size: 13px; }
+ .value { font-size: 13px; font-weight: 650; }
+</style>
+<text class="title" x="20" y="30">Writer throughput under reader load</text>
+<text class="subtitle" x="20" y="53">Reported separately from reader throughput</text>
+<text class="label" x="20" y="106">1 readers · chronotail</text><rect x="390" y="88" width="540.0" height="24" rx="4" fill="#2563eb"/><text class="value" x="940.0" y="106">7.31M records/s</text><text class="label" x="20" y="148">1 readers · nanots</text><rect x="390" y="130" width="147.1" height="24" rx="4" fill="#ea580c"/><text class="value" x="547.1" y="148">1.99M records/s</text><text class="label" x="20" y="190">1 readers · sqlite</text><rect x="390" y="172" width="54.5" height="24" rx="4" fill="#16a34a"/><text class="value" x="454.5" y="190">737.32k records/s</text><text class="label" x="20" y="232">8 readers · chronotail</text><rect x="390" y="214" width="289.8" height="24" rx="4" fill="#2563eb"/><text class="value" x="689.8" y="232">3.92M records/s</text><text class="label" x="20" y="274">8 readers · nanots</text><rect x="390" y="256" width="178.3" height="24" rx="4" fill="#ea580c"/><text class="value" x="578.3" y="274">2.41M records/s</text><text class="label" x="20" y="316">8 readers · sqlite</text><rect x="390" y="298" width="21.8" height="24" rx="4" fill="#16a34a"/><text class="value" x="421.8" y="316">294.44k records/s</text><text class="label" x="20" y="358">32 readers · chronotail</text><rect x="390" y="340" width="98.4" height="24" rx="4" fill="#2563eb"/><text class="value" x="498.4" y="358">1.33M records/s</text><text class="label" x="20" y="400">32 readers · nanots</text><rect x="390" y="382" width="182.9" height="24" rx="4" fill="#ea580c"/><text class="value" x="582.9" y="400">2.47M records/s</text><text class="label" x="20" y="442">32 readers · sqlite</text><rect x="390" y="424" width="10.8" height="24" rx="4" fill="#16a34a"/><text class="value" x="410.8" y="442">145.69k records/s</text>
+</svg>

@@ -1,0 +1,42 @@
+1-pre
+width=100 queries=1000000 queries_per_second=160003.662 points_per_second=16000366.196
+1-split
+width=100 queries=1000000 queries_per_second=165663.364 points_per_second=16566336.446
+1-soa
+width=100 queries=1000000 queries_per_second=129746.511 points_per_second=12974651.051
+1-rawdirect
+width=100 queries=1000000 queries_per_second=120816.598 points_per_second=12081659.758
+1-block
+width=100 queries=1000000 queries_per_second=138171.550 points_per_second=13817154.985
+1-vector
+width=100 queries=1000000 queries_per_second=155674.639 points_per_second=15567463.930
+1-final
+width=100 queries=1000000 queries_per_second=142530.035 points_per_second=14253003.472
+2-pre
+width=100 queries=1000000 queries_per_second=149075.479 points_per_second=14907547.859
+2-split
+width=100 queries=1000000 queries_per_second=184869.548 points_per_second=18486954.755
+2-soa
+width=100 queries=1000000 queries_per_second=155374.585 points_per_second=15537458.458
+2-rawdirect
+width=100 queries=1000000 queries_per_second=174376.401 points_per_second=17437640.076
+2-block
+width=100 queries=1000000 queries_per_second=187360.118 points_per_second=18736011.810
+2-vector
+width=100 queries=1000000 queries_per_second=184406.971 points_per_second=18440697.069
+2-final
+width=100 queries=1000000 queries_per_second=190090.672 points_per_second=19009067.153
+3-pre
+width=100 queries=1000000 queries_per_second=197979.873 points_per_second=19797987.277
+3-split
+width=100 queries=1000000 queries_per_second=196389.227 points_per_second=19638922.695
+3-soa
+width=100 queries=1000000 queries_per_second=193586.719 points_per_second=19358671.883
+3-rawdirect
+width=100 queries=1000000 queries_per_second=194967.415 points_per_second=19496741.499
+3-block
+width=100 queries=1000000 queries_per_second=196390.789 points_per_second=19639078.900
+3-vector
+width=100 queries=1000000 queries_per_second=190478.745 points_per_second=19047874.529
+3-final
+width=100 queries=1000000 queries_per_second=195430.094 points_per_second=19543009.365

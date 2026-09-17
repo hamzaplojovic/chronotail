@@ -1,0 +1,3 @@
+series=8 records_per_second=22930960.896
+series=8 records_per_second=20721353.499
+series=8 records_per_second=23506603.446

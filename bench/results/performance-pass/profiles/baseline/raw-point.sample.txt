@@ -1,0 +1,122 @@
+Analysis of sampling perf-probe (pid 90354) every 1 millisecond
+Process:         perf-probe [90354]
+Path:            /Users/USER/*/perf-probe
+Load Address:    0x1045b4000
+Identifier:      perf-probe
+Version:         ???
+Code Type:       ARM64
+Parent Process:  bash [90348]
+Target Type:     live task
+
+Date/Time:       2026-09-16 21:10:55.975 +0200
+Launch Time:     2026-09-16 21:10:55.574 +0200
+OS Version:      macOS 26.1 (25B78)
+Report Version:  7
+Analysis Tool:   /usr/bin/sample
+
+Physical footprint:         16.5M
+Physical footprint (peak):  16.5M
+Idle exit:                  untracked
+----
+
+Call graph:
+    45 Thread_1167295: Main Thread
+    + 20 _dyld_start  (in dyld) + 0  [0x1046889c0]
+    + 15 start  (in dyld) + 6060  [0x10468c8f0]
+    + ! 15 dyld4::ExternallyViewableState::createMinimalInfo(lsl::Allocator&, unsigned long long, char const*, unsigned long long, char const*, DyldSharedCache const*)  (in dyld) + 1660  [0x1046d3d80]
+    + !   15 dyld4::ExternallyViewableState::triggerNotifications(dyld_image_mode, unsigned int, dyld_image_info const*)  (in dyld) + 264  [0x1046d4554]
+    + !     15 dyld4::RemoteNotificationResponder::blockOnSynchronousEvent(unsigned int)  (in dyld) + 48  [0x1046bdaec]
+    + !       15 dyld4::RemoteNotificationResponder::sendMessage(int, unsigned int, mach_msg_header_t*)  (in dyld) + 220  [0x1046bd760]
+    + !         15 mach_msg_overwrite  (in dyld) + 244  [0x10470c454]
+    + !           15 mach_msg2_internal  (in dyld) + 76  [0x10470c2a8]
+    + !             15 mach_msg2_trap  (in dyld) + 8  [0x10468572c]
+    + 7 start  (in dyld) + 7104  [0x188e85d04]
+    + ! 6 dyld4::prepare(dyld4::APIs&, mach_o::Header const*)  (in dyld) + 2996  [0x188e870e4]
+    + ! : 6 dyld4::RuntimeState::notifyDebuggerLoad(std::span<dyld4::Loader const*, 18446744073709551615ul> const&)  (in dyld) + 432  [0x188e962c4]
+    + ! :   6 dyld4::ExternallyViewableState::addImages(lsl::Allocator&, lsl::Allocator&, std::span<dyld4::ExternallyViewableState::ImageInfo, 18446744073709551615ul> const&)  (in dyld) + 544  [0x188ecd964]
+    + ! :     6 dyld4::ExternallyViewableState::triggerNotifications(dyld_image_mode, unsigned int, dyld_image_info const*)  (in dyld) + 264  [0x188ecd554]
+    + ! :       6 dyld4::RemoteNotificationResponder::blockOnSynchronousEvent(unsigned int)  (in dyld) + 48  [0x188eb6aec]
+    + ! :         6 dyld4::RemoteNotificationResponder::sendMessage(int, unsigned int, mach_msg_header_t*)  (in dyld) + 220  [0x188eb6760]
+    + ! :           6 mach_msg_overwrite  (in dyld) + 244  [0x188f05454]
+    + ! :             6 mach_msg2_internal  (in dyld) + 76  [0x188f052a8]
+    + ! :               6 mach_msg2_trap  (in dyld) + 8  [0x188e7e72c]
+    + ! 1 dyld4::prepare(dyld4::APIs&, mach_o::Header const*)  (in dyld) + 1660  [0x188e86bac]
+    + !   1 dyld4::JustInTimeLoader::applyFixups(Diagnostics&, dyld4::RuntimeState&, dyld4::DyldCacheDataConstLazyScopedWriter&, bool, lsl::Vector<std::pair<dyld4::Loader const*, char const*>>*) const  (in dyld) + 616  [0x188eaa134]
+    + !     1 dyld4::Loader::forEachBindTarget(Diagnostics&, dyld4::RuntimeState&, void (unsigned int, unsigned int, dyld4::Loader::ResolvedSymbol const&) block_pointer, bool, void (dyld4::Loader::ResolvedSymbol const&, bool&) block_pointer, void (dyld4::Loader::ResolvedSymbol const&, bool&) block_pointer) const  (in dyld) + 108  [0x188ea35f0]
+    + !       1 dyld3::MachOAnalyzer::withVMLayout(Diagnostics&, void (mach_o::Layout const&) block_pointer) const  (in dyld) + 672  [0x188edce04]
+    + !         1 invocation function for block in dyld4::Loader::forEachBindTarget(Diagnostics&, dyld4::RuntimeState&, void (unsigned int, unsigned int, dyld4::Loader::ResolvedSymbol const&) block_pointer, bool, void (dyld4::Loader::ResolvedSymbol const&, bool&) block_pointer, void (dyld4::Loader::ResolvedSymbol const&, bool&) block_pointer) const  (in dyld) + 264  [0x188ea3704]
+    + !           1 mach_o::Fixups::forEachBindTarget_Opcodes(Diagnostics&, bool, void (mach_o::Fixups::BindTargetInfo const&, bool&) block_pointer, void (mach_o::Fixups::BindTargetInfo const&, bool&) block_pointer) const  (in dyld) + 208  [0x188ed95d0]
+    + !             1 mach_o::Fixups::forEachBindUnified_Opcodes(Diagnostics&, bool, void (unsigned long long, unsigned int, mach_o::Fixups::BindTargetInfo const&, bool&) block_pointer, void (unsigned long long, unsigned int, mach_o::Fixups::BindTargetInfo const&, bool&) block_pointer) const  (in dyld) + 244  [0x188ed9c54]
+    + !               1 mach_o::Fixups::forEachBind_OpcodesLazy(Diagnostics&, void (char const*, bool, bool, unsigned int, int, unsigned int, unsigned int, unsigned long long, unsigned char, char const*, bool, bool, unsigned long long, bool, bool&) block_pointer) const  (in dyld) + 444  [0x188eda4d8]
+    + !                 1 invocation function for block in mach_o::Fixups::forEachBindTarget_Opcodes(Diagnostics&, bool, void (mach_o::Fixups::BindTargetInfo const&, bool&) block_pointer, void (mach_o::Fixups::BindTargetInfo const&, bool&) block_pointer) const  (in dyld) + 72  [0x188edac18]
+    + !                   1 invocation function for block in dyld4::Loader::forEachBindTarget(Diagnostics&, dyld4::RuntimeState&, void (unsigned int, unsigned int, dyld4::Loader::ResolvedSymbol const&) block_pointer, bool, void (dyld4::Loader::ResolvedSymbol const&, bool&) block_pointer, void (dyld4::Loader::ResolvedSymbol const&, bool&) block_pointer) const  (in dyld) + 100  [0x188ea3794]
+    + !                     1 dyld4::Loader::resolveSymbol(Diagnostics&, dyld4::RuntimeState&, int, char const*, bool, bool, void (unsigned int, unsigned int, dyld4::Loader::ResolvedSymbol const&) block_pointer, bool) const  (in dyld) + 544  [0x188ea3a1c]
+    + !                       1 dyld4::Loader::hasExportedSymbol(Diagnostics&, dyld4::RuntimeState&, char const*, dyld4::Loader::ExportedSymbolMode, dyld4::Loader::ResolverMode, dyld4::Loader::ResolvedSymbol*, dyld3::Array<dyld4::Loader const*>*) const  (in dyld) + 1344  [0x188ea4c9c]
+    + !                         1 dyld4::Loader::hasExportedSymbol(Diagnostics&, dyld4::RuntimeState&, char const*, dyld4::Loader::ExportedSymbolMode, dyld4::Loader::ResolverMode, dyld4::Loader::ResolvedSymbol*, dyld3::Array<dyld4::Loader const*>*) const  (in dyld) + 344  [0x188ea48b4]
+    + 1 start  (in dyld) + 312  [0x10468b27c]
+    + ! 1 dyld3::MachOAnalyzer::withChainStarts(Diagnostics&, unsigned long long, void (dyld_chained_starts_in_image const*) block_pointer) const  (in dyld) + 172  [0x1046e7dc0]
+    + !   1 dyld3::MachOLoaded::getLinkEditPointers(Diagnostics&, dyld3::MachOLoaded::LinkEditInfo&) const  (in dyld) + 140  [0x1046dec50]
+    + !     1 mach_o::Header::forEachSegment(void (mach_o::Header::SegmentInfo const&, bool&) block_pointer) const  (in dyld) + 124  [0x104706134]
+    + !       1 mach_o::Header::forEachLoadCommand(void (load_command const*, bool&) block_pointer) const  (in dyld) + 208  [0x104703158]
+    + !         1 invocation function for block in mach_o::Header::forEachSegment(void (mach_o::Header::SegmentInfo const&, bool&) block_pointer) const  (in dyld) + 248  [0x1047063d0]
+    + !           1 invocation function for block in dyld3::MachOLoaded::getLayoutInfo(dyld3::MachOLoaded::LayoutInfo&) const  (in dyld) + 148  [0x1046decf8]
+    + 1 start  (in dyld) + 4752  [0x10468c3d4]
+    + ! 1 dyld4::ExternallyViewableState::createMinimalInfo(lsl::Allocator&, unsigned long long, char const*, unsigned long long, char const*, DyldSharedCache const*)  (in dyld) + 1660  [0x1046d3d80]
+    + !   1 dyld4::ExternallyViewableState::triggerNotifications(dyld_image_mode, unsigned int, dyld_image_info const*)  (in dyld) + 264  [0x1046d4554]
+    + !     1 dyld4::RemoteNotificationResponder::blockOnSynchronousEvent(unsigned int)  (in dyld) + 48  [0x1046bdaec]
+    + !       1 dyld4::RemoteNotificationResponder::sendMessage(int, unsigned int, mach_msg_header_t*)  (in dyld) + 220  [0x1046bd760]
+    + !         1 mach_msg_overwrite  (in dyld) + 244  [0x10470c454]
+    + !           1 mach_msg2_internal  (in dyld) + 76  [0x10470c2a8]
+    + !             1 mach_msg2_trap  (in dyld) + 8  [0x10468572c]
+    + 1 start  (in dyld) + 4076  [0x188e85130]
+    +   1 dyld4::ExternallyViewableState::createMinimalInfo(lsl::Allocator&, unsigned long long, char const*, unsigned long long, char const*, DyldSharedCache const*)  (in dyld) + 1660  [0x188eccd80]
+    +     1 dyld4::ExternallyViewableState::triggerNotifications(dyld_image_mode, unsigned int, dyld_image_info const*)  (in dyld) + 264  [0x188ecd554]
+    +       1 dyld4::RemoteNotificationResponder::blockOnSynchronousEvent(unsigned int)  (in dyld) + 48  [0x188eb6aec]
+    +         1 dyld4::RemoteNotificationResponder::sendMessage(int, unsigned int, mach_msg_header_t*)  (in dyld) + 220  [0x188eb6760]
+    +           1 mach_msg_overwrite  (in dyld) + 244  [0x188f05454]
+    +             1 mach_msg2_internal  (in dyld) + 76  [0x188f052a8]
+    +               1 mach_msg2_trap  (in dyld) + 8  [0x188e7e72c]
+    2378 Thread_1167295   DispatchQueue_1: com.apple.main-thread  (serial)
+      2378 start  (in dyld) + 7184  [0x188e85d54]
+        2378 main  (in perf-probe) + 2824  [0x1045ba754]  start.zig:602
+          2331 perf_probe.queryProbe  (in perf-probe) + 2396,2408,...  [0x1045b9088,0x1045b9094,...]  perf_probe.zig:51
+          42 perf_probe.queryProbe  (in perf-probe) + 100  [0x1045b8790]  perf_probe.zig:40
+          ! 27 perf_probe.buildData  (in perf-probe) + 208  [0x1045b6f4c]  perf_probe.zig:33
+          ! : 19 internal.engine.AppenderFor(fs.File).append  (in perf-probe) + 620  [0x1045b5814]  engine.zig:153
+          ! : | 18 internal.engine.AppenderFor(fs.File).flushSeries  (in perf-probe) + 384,388,...  [0x1045b4f18,0x1045b4f1c,...]  engine.zig:285
+          ! : | 1 internal.engine.AppenderFor(fs.File).flushSeries  (in perf-probe) + 504  [0x1045b4f90]  engine.zig:289
+          ! : |   1 posix.pwrite  (in perf-probe) + 84  [0x1045bb098]  posix.zig:1458
+          ! : |     1 pwrite  (in libsystem_kernel.dylib) + 8  [0x18920e41c]
+          ! : 6 internal.engine.AppenderFor(fs.File).append  (in perf-probe) + 48,156,...  [0x1045b55d8,0x1045b5644,...]  engine.zig:153
+          ! : 1 array_list.Aligned(internal.engine.BlockIndex,null).ensureTotalCapacity  (in perf-probe) + 156  [0x1045bac78]  array_list.zig:0
+          ! : 1 internal.engine.AppenderFor(fs.File).append  (in perf-probe) + 588  [0x1045b57f4]  engine.zig:153
+          ! :   1 array_list.Aligned(internal.engine.BlockIndex,null).ensureTotalCapacity  (in perf-probe) + 32  [0x1045babfc]  array_list.zig:1206
+          ! 13 perf_probe.buildData  (in perf-probe) + 280  [0x1045b6f94]  perf_probe.zig:35
+          ! : 13 __close_nocancel  (in libsystem_kernel.dylib) + 8  [0x18920c570]
+          ! 2 perf_probe.buildData  (in perf-probe) + 192  [0x1045b6f3c]  perf_probe.zig:32
+          !   2 perf_probe.buildData  (in perf-probe) + 192  [0x1045b6f3c]  perf_probe.zig:32
+          !     2 ???  (in libsystem_m.dylib)  load address 0x198b78000 + 0x1150  [0x198b79150]
+          2 perf_probe.queryProbe  (in perf-probe) + 616  [0x1045b8994]  perf_probe.zig:51
+          ! 2 fs.File.preadAll  (in perf-probe) + 88  [0x1045b7038]  File.zig:880
+          !   2 pread  (in libsystem_kernel.dylib) + 8  [0x18920c63c]
+          1 perf_probe.queryProbe  (in perf-probe) + 124  [0x1045b87a8]  perf_probe.zig:42
+          ! 1 internal.engine.ReaderFor(fs.File).open  (in perf-probe) + 440  [0x1045b8288]  engine.zig:334
+          !   1 fs.File.preadAll  (in perf-probe) + 88  [0x1045b7038]  File.zig:880
+          !     1 pread  (in libsystem_kernel.dylib) + 8  [0x18920c63c]
+          1 perf_probe.queryProbe  (in perf-probe) + 1184  [0x1045b8bcc]  perf_probe.zig:51
+          ! 1 heap.PageAllocator.alloc  (in perf-probe) + 136  [0x1045bb830]  PageAllocator.zig:120
+          !   1 mmap  (in libsystem_kernel.dylib) + 80  [0x18920b9a8]
+          !     1 __mmap  (in libsystem_kernel.dylib) + 8  [0x18920ba04]
+          1 perf_probe.queryProbe  (in perf-probe) + 2548  [0x1045b9120]  perf_probe.zig:52
+
+Total number in stack (recursive counted multiple, when >=5):
+
+Sort by top of stack, same collapsed (when >= 5):
+        perf_probe.queryProbe  (in perf-probe)        2332
+        mach_msg2_trap  (in dyld)        23
+        _dyld_start  (in dyld)        20
+        internal.engine.AppenderFor(fs.File).flushSeries  (in perf-probe)        18
+        __close_nocancel  (in libsystem_kernel.dylib)        13
+        internal.engine.AppenderFor(fs.File).append  (in perf-probe)        6
+
+Binary images description not available

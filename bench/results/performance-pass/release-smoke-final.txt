@@ -1,0 +1,1 @@
+SMOKE TEST PASSED: chronotail-0.1.0-macos-aarch64.tar.gz

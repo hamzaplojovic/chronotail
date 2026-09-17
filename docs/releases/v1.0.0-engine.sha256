@@ -1,0 +1,8 @@
+# Chronotail v1.0.0 frozen engine and public boundary
+# Generated before release-only packaging, documentation, and cleanup changes.
+9f1cf6c1b6d30c21b67f65a0275f9045c2f45f09b95b0e3e8fbf38d9f5594e83  src/chronotail.zig
+82baa72f9cc3c38dcf05b6598370c40150246d8db0e6b9289a72e20923d371ed  src/c_api.zig
+59f38a8f5983d78ebb3f05c18af9d877b7c7050ea3e4610154d0c2c480b30cb6  src/cli.zig
+cd5bb1f627eec29ea159736900cbe0e5a2d41936be4536bb0c716a4bfcd8a4cb  src/internal/engine.zig
+204dde2dc003eefc6d41c36ea89d9f9742876d8fc003b24aec30333c3f3da393  src/internal/format.zig
+d72a147b605964f7e7e568b1081641c104764510fa41b427569947f1b23c9bba  include/chronotail.h

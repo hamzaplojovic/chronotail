@@ -1,0 +1,1 @@
+WriterSeries=96 ReaderSeries=96 BlockIndex=40 BlockVerification=24

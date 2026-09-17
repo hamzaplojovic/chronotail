@@ -1,0 +1,20 @@
+inline-1
+series=1 records_per_second=33483025.673
+pointer-1
+series=1 records_per_second=34351556.405
+inline-2
+series=1 records_per_second=32046095.103
+pointer-2
+series=1 records_per_second=25370609.101
+inline-3
+series=1 records_per_second=35006140.620
+pointer-3
+series=1 records_per_second=32000597.413
+inline-4
+series=1 records_per_second=35650909.856
+pointer-4
+series=1 records_per_second=35598474.088
+inline-5
+series=1 records_per_second=31329465.819
+pointer-5
+series=1 records_per_second=29192136.806

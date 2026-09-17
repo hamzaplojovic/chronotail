@@ -1,0 +1,12 @@
+pre-1
+width=100 queries=1000000 queries_per_second=181650.543 points_per_second=18165054.314
+tiger-1
+width=100 queries=1000000 queries_per_second=180533.579 points_per_second=18053357.873
+pre-2
+width=100 queries=1000000 queries_per_second=187755.923 points_per_second=18775592.308
+tiger-2
+width=100 queries=1000000 queries_per_second=170747.586 points_per_second=17074758.614
+pre-3
+width=100 queries=1000000 queries_per_second=199311.826 points_per_second=19931182.609
+tiger-3
+width=100 queries=1000000 queries_per_second=161718.264 points_per_second=16171826.411

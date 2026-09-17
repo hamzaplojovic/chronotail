@@ -1,0 +1,5 @@
+project_zig_lines_over_100=0
+bench/engine.zig:71 runBenchmark 71 lines
+sim/main.zig:292 runSeed 220 lines
+src/internal/engine.zig:110 AppenderFor 326 lines
+src/internal/engine.zig:497 ReaderFor 279 lines

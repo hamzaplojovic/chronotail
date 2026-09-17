@@ -1,0 +1,12 @@
+binary-1
+irregular_queries_per_second=6025649.079
+hybrid-1
+irregular_queries_per_second=5925449.256
+binary-2
+irregular_queries_per_second=5610774.668
+hybrid-2
+irregular_queries_per_second=6067233.134
+binary-3
+irregular_queries_per_second=5994052.397
+hybrid-3
+irregular_queries_per_second=5935211.819

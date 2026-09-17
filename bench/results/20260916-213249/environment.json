@@ -1,0 +1,21 @@
+{
+  "started_utc": "2026-09-16T19:32:49.339063+00:00",
+  "platform": "macOS-26.1-arm64-arm-64bit-Mach-O",
+  "uname": "Darwin Hamzas-MacBook-Air.local 25.1.0 Darwin Kernel Version 25.1.0: Mon Oct 20 19:32:47 PDT 2025; root:xnu-12377.41.6~2/RELEASE_ARM64_T8103 arm64",
+  "macos": "ProductName:\t\tmacOS\nProductVersion:\t\t26.1\nBuildVersion:\t\t25B78",
+  "cpu": "Apple M1",
+  "logical_cpus": "8",
+  "ram_bytes": "8589934592",
+  "filesystem": "Device Identifier:         disk3s1s1\n   Device Node:               /dev/disk3s1s1\n   Whole:                     No\n   Part of Whole:             disk3\n\n   Volume Name:               Macintosh HD\n   Mounted:                   Yes\n   Mount Point:               /\n\n   Partition Type:            41504653-0000-11AA-AA11-00306543ECAC\n   File System Personality:   APFS\n   Type (Bundle):             apfs\n   Name (User Visible):       APFS\n   Owners:                    Enabled\n\n   OS Can Be Installed:       No\n   Booter Disk:               disk3s2\n   Recovery Disk:             disk3s3\n   Media Type:                Generic\n   Protocol:                  Apple Fabric\n   SMART Status:              Verified\n   Volume UUID:               C52D1BAB-D265-4D77-A91D-977CC14C8D09\n   Disk / Partition UUID:     C52D1BAB-D265-4D77-A91D-977CC14C8D09\n\n   Disk Size:                 245.1 GB (245107195904 Bytes) (exactly 478724992 512-Byte-Units)\n   Device Block Size:         4096 Bytes\n\n   Volume Used Space:         12.2 GB (12189106176 Bytes) (exactly 23806848 512-Byte-Units)\n   Container Total Space:     245.1 GB (245107195904 Bytes) (exactly 478724992 512-Byte-Units)\n   Container Free Space:      110.5 GB (110452932608 Bytes) (exactly 215728384 512-Byte-Units)\n   Allocation Block Size:     4096 Bytes\n\n   Media OS Use Only:         No\n   Media Read-Only:           Yes\n   Volume Read-Only:          Yes (read-only mount flag set)\n\n   Device Location:           Internal\n   Removable Media:           Fixed\n\n   Solid State:               Yes\n   Hardware AES Support:      Yes\n\n   This disk is an APFS Volume Snapshot.  APFS Information:\n   APFS Snapshot Name:        com.apple.os.update-C6AB179000F92C4C211177BC5C840A511D1AA2A227C324AA9AAC14FC599E9873\n   APFS Snapshot UUID:        C52D1BAB-D265-4D77-A91D-977CC14C8D09\n   APFS Container:            disk3\n   APFS Physical Store:       disk0s2\n   APFS Volume Group:         AEC0D19B-36E4-4A4F-8939-727D72B50075\n   EFI Driver In macOS:       2632040015000002\n   Encrypted:                 No\n   FileVault:                 Yes\n   Sealed:                    Yes\n   Locked:                    No\n\n   APFS Snapshots are defined upon this APFS Volume.  Snapshot list:\n   Snapshot UUID:             C52D1BAB-D265-4D77-A91D-977CC14C8D09\n   Name:                      com.apple.os.update-C6AB179000F92C4C211177BC5C840A511D1AA2A227C324AA9AAC14FC599E9873\n   XID:                       29095751",
+  "zig": "0.15.2",
+  "clang": "Apple clang version 17.0.0 (clang-1700.3.19.1)\nTarget: arm64-apple-darwin25.1.0\nThread model: posix\nInstalledDir: /Library/Developer/CommandLineTools/usr/bin",
+  "cmake": "cmake version 4.2.1\n\nCMake suite maintained and supported by Kitware (kitware.com/cmake).",
+  "python": "3.14.6 (v3.14.6:c63aec69bd5, Jun 10 2026, 08:07:54) [Clang 21.0.0 (clang-2100.1.1.101)]",
+  "nanots_commit": "d551210c8d521604a70a73f0f85fe2759c434c23",
+  "sqlite_header_version": "#define SQLITE_VERSION        \"3.38.5\"",
+  "chronotail_abi": 1,
+  "chronotail_format": 6,
+  "run_count": 5,
+  "latency_sampling": "append: deterministic randomized intervals averaging 1/1024 calls; queries: every call; concurrency readers: every 256th aggregate query",
+  "cache_policy": "warm OS page cache; cold cache not run because macOS cache eviction requires privileged global purge"
+}

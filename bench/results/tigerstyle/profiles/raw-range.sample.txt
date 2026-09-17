@@ -1,0 +1,171 @@
+Analysis of sampling perf-probe (pid 63146) every 1 millisecond
+Process:         perf-probe [63146]
+Path:            /Users/USER/*/perf-probe
+Load Address:    0x102fcc000
+Identifier:      perf-probe
+Version:         ???
+Code Type:       ARM64
+Parent Process:  bash [63137]
+Target Type:     live task
+
+Date/Time:       2026-09-17 09:58:04.792 +0200
+Launch Time:     2026-09-17 09:58:04.694 +0200
+OS Version:      macOS 26.1 (25B78)
+Report Version:  7
+Analysis Tool:   /usr/bin/sample
+
+Physical footprint:         1137K
+Physical footprint (peak):  1137K
+Idle exit:                  untracked
+----
+
+Call graph:
+    554 Thread_1686845: Main Thread
+    + 520 _dyld_start  (in dyld) + 0  [0x1031b49c0]
+    + 19 start  (in dyld) + 6060  [0x1031b88f0]
+    + ! 19 dyld4::ExternallyViewableState::createMinimalInfo(lsl::Allocator&, unsigned long long, char const*, unsigned long long, char const*, DyldSharedCache const*)  (in dyld) + 1660  [0x1031ffd80]
+    + !   19 dyld4::ExternallyViewableState::triggerNotifications(dyld_image_mode, unsigned int, dyld_image_info const*)  (in dyld) + 264  [0x103200554]
+    + !     19 dyld4::RemoteNotificationResponder::blockOnSynchronousEvent(unsigned int)  (in dyld) + 48  [0x1031e9aec]
+    + !       19 dyld4::RemoteNotificationResponder::sendMessage(int, unsigned int, mach_msg_header_t*)  (in dyld) + 220  [0x1031e9760]
+    + !         19 mach_msg_overwrite  (in dyld) + 244  [0x103238454]
+    + !           19 mach_msg2_internal  (in dyld) + 76  [0x1032382a8]
+    + !             19 mach_msg2_trap  (in dyld) + 8  [0x1031b172c]
+    + 10 start  (in dyld) + 7104  [0x188e85d04]
+    + ! 9 dyld4::prepare(dyld4::APIs&, mach_o::Header const*)  (in dyld) + 2996  [0x188e870e4]
+    + ! : 9 dyld4::RuntimeState::notifyDebuggerLoad(std::span<dyld4::Loader const*, 18446744073709551615ul> const&)  (in dyld) + 432  [0x188e962c4]
+    + ! :   9 dyld4::ExternallyViewableState::addImages(lsl::Allocator&, lsl::Allocator&, std::span<dyld4::ExternallyViewableState::ImageInfo, 18446744073709551615ul> const&)  (in dyld) + 544  [0x188ecd964]
+    + ! :     8 dyld4::ExternallyViewableState::triggerNotifications(dyld_image_mode, unsigned int, dyld_image_info const*)  (in dyld) + 264  [0x188ecd554]
+    + ! :     | 8 dyld4::RemoteNotificationResponder::blockOnSynchronousEvent(unsigned int)  (in dyld) + 48  [0x188eb6aec]
+    + ! :     |   8 dyld4::RemoteNotificationResponder::sendMessage(int, unsigned int, mach_msg_header_t*)  (in dyld) + 220  [0x188eb6760]
+    + ! :     |     8 mach_msg_overwrite  (in dyld) + 244  [0x188f05454]
+    + ! :     |       8 mach_msg2_internal  (in dyld) + 76  [0x188f052a8]
+    + ! :     |         8 mach_msg2_trap  (in dyld) + 8  [0x188e7e72c]
+    + ! :     1 dyld4::ExternallyViewableState::triggerNotifications(dyld_image_mode, unsigned int, dyld_image_info const*)  (in dyld) + 580  [0x188ecd690]
+    + ! :       1 dyld4::RemoteNotificationResponder::notifyMonitorOfImageListChanges(bool, unsigned int, mach_header const**, char const**, unsigned long long)  (in dyld) + 484  [0x188eb6a00]
+    + ! :         1 dyld4::RemoteNotificationResponder::sendMessage(int, unsigned int, mach_msg_header_t*)  (in dyld) + 220  [0x188eb6760]
+    + ! :           1 mach_msg_overwrite  (in dyld) + 244  [0x188f05454]
+    + ! :             1 mach_msg2_internal  (in dyld) + 76  [0x188f052a8]
+    + ! :               1 mach_msg2_trap  (in dyld) + 8  [0x188e7e72c]
+    + ! 1 dyld4::prepare(dyld4::APIs&, mach_o::Header const*)  (in dyld) + 952  [0x188e868e8]
+    + !   1 dyld4::JustInTimeLoader::loadDependents(Diagnostics&, dyld4::RuntimeState&, dyld4::Loader::LoadOptions const&)  (in dyld) + 304  [0x188ea9668]
+    + !     1 dyld4::PrebuiltLoader::loadDependents(Diagnostics&, dyld4::RuntimeState&, dyld4::Loader::LoadOptions const&)  (in dyld) + 424  [0x188ead020]
+    + !       1 dyld4::PrebuiltLoader::loadDependents(Diagnostics&, dyld4::RuntimeState&, dyld4::Loader::LoadOptions const&)  (in dyld) + 424  [0x188ead020]
+    + !         1 dyld4::PrebuiltLoader::loadDependents(Diagnostics&, dyld4::RuntimeState&, dyld4::Loader::LoadOptions const&)  (in dyld) + 424  [0x188ead020]
+    + !           1 dyld4::PrebuiltLoader::loadDependents(Diagnostics&, dyld4::RuntimeState&, dyld4::Loader::LoadOptions const&)  (in dyld) + 424  [0x188ead020]
+    + !             1 dyld4::PrebuiltLoader::loadDependents(Diagnostics&, dyld4::RuntimeState&, dyld4::Loader::LoadOptions const&)  (in dyld) + 424  [0x188ead020]
+    + !               1 dyld4::PrebuiltLoader::loadDependents(Diagnostics&, dyld4::RuntimeState&, dyld4::Loader::LoadOptions const&)  (in dyld) + 424  [0x188ead020]
+    + !                 1 dyld4::PrebuiltLoader::loadDependents(Diagnostics&, dyld4::RuntimeState&, dyld4::Loader::LoadOptions const&)  (in dyld) + 424  [0x188ead020]
+    + !                   1 dyld4::PrebuiltLoader::loadDependents(Diagnostics&, dyld4::RuntimeState&, dyld4::Loader::LoadOptions const&)  (in dyld) + 424  [0x188ead020]
+    + !                     1 dyld4::PrebuiltLoader::loadDependents(Diagnostics&, dyld4::RuntimeState&, dyld4::Loader::LoadOptions const&)  (in dyld) + 424  [0x188ead020]
+    + !                       1 dyld4::PrebuiltLoader::loadDependents(Diagnostics&, dyld4::RuntimeState&, dyld4::Loader::LoadOptions const&)  (in dyld) + 424  [0x188ead020]
+    + !                         1 dyld4::PrebuiltLoader::loadDependents(Diagnostics&, dyld4::RuntimeState&, dyld4::Loader::LoadOptions const&)  (in dyld) + 424  [0x188ead020]
+    + !                           1 dyld4::PrebuiltLoader::loadDependents(Diagnostics&, dyld4::RuntimeState&, dyld4::Loader::LoadOptions const&)  (in dyld) + 424  [0x188ead020]
+    + !                             1 dyld4::PrebuiltLoader::loadDependents(Diagnostics&, dyld4::RuntimeState&, dyld4::Loader::LoadOptions const&)  (in dyld) + 424  [0x188ead020]
+    + !                               1 dyld4::PrebuiltLoader::loadDependents(Diagnostics&, dyld4::RuntimeState&, dyld4::Loader::LoadOptions const&)  (in dyld) + 424  [0x188ead020]
+    + !                                 1 dyld4::PrebuiltLoader::loadDependents(Diagnostics&, dyld4::RuntimeState&, dyld4::Loader::LoadOptions const&)  (in dyld) + 424  [0x188ead020]
+    + !                                   1 dyld4::PrebuiltLoader::loadDependents(Diagnostics&, dyld4::RuntimeState&, dyld4::Loader::LoadOptions const&)  (in dyld) + 424  [0x188ead020]
+    + !                                     1 dyld4::PrebuiltLoader::loadDependents(Diagnostics&, dyld4::RuntimeState&, dyld4::Loader::LoadOptions const&)  (in dyld) + 424  [0x188ead020]
+    + !                                       1 dyld4::PrebuiltLoader::loadDependents(Diagnostics&, dyld4::RuntimeState&, dyld4::Loader::LoadOptions const&)  (in dyld) + 424  [0x188ead020]
+    + !                                         1 dyld4::PrebuiltLoader::loadDependents(Diagnostics&, dyld4::RuntimeState&, dyld4::Loader::LoadOptions const&)  (in dyld) + 424  [0x188ead020]
+    + !                                           1 dyld4::PrebuiltLoader::loadDependents(Diagnostics&, dyld4::RuntimeState&, dyld4::Loader::LoadOptions const&)  (in dyld) + 424  [0x188ead020]
+    + !                                             1 dyld4::PrebuiltLoader::loadDependents(Diagnostics&, dyld4::RuntimeState&, dyld4::Loader::LoadOptions const&)  (in dyld) + 424  [0x188ead020]
+    + !                                               1 dyld4::PrebuiltLoader::loadDependents(Diagnostics&, dyld4::RuntimeState&, dyld4::Loader::LoadOptions const&)  (in dyld) + 424  [0x188ead020]
+    + !                                                 1 dyld4::PrebuiltLoader::loadDependents(Diagnostics&, dyld4::RuntimeState&, dyld4::Loader::LoadOptions const&)  (in dyld) + 424  [0x188ead020]
+    + !                                                   1 dyld4::PrebuiltLoader::loadDependents(Diagnostics&, dyld4::RuntimeState&, dyld4::Loader::LoadOptions const&)  (in dyld) + 424  [0x188ead020]
+    + !                                                     1 dyld4::PrebuiltLoader::loadDependents(Diagnostics&, dyld4::RuntimeState&, dyld4::Loader::LoadOptions const&)  (in dyld) + 424  [0x188ead020]
+    + !                                                       1 dyld4::PrebuiltLoader::loadDependents(Diagnostics&, dyld4::RuntimeState&, dyld4::Loader::LoadOptions const&)  (in dyld) + 424  [0x188ead020]
+    + !                                                         1 dyld4::PrebuiltLoader::loadDependents(Diagnostics&, dyld4::RuntimeState&, dyld4::Loader::LoadOptions const&)  (in dyld) + 424  [0x188ead020]
+    + !                                                           1 dyld4::PrebuiltLoader::loadDependents(Diagnostics&, dyld4::RuntimeState&, dyld4::Loader::LoadOptions const&)  (in dyld) + 424  [0x188ead020]
+    + !                                                             1 dyld4::PrebuiltLoader::loadDependents(Diagnostics&, dyld4::RuntimeState&, dyld4::Loader::LoadOptions const&)  (in dyld) + 424  [0x188ead020]
+    + !                                                               1 dyld4::PrebuiltLoader::loadDependents(Diagnostics&, dyld4::RuntimeState&, dyld4::Loader::LoadOptions const&)  (in dyld) + 424  [0x188ead020]
+    + !                                                                 1 dyld4::PrebuiltLoader::loadDependents(Diagnostics&, dyld4::RuntimeState&, dyld4::Loader::LoadOptions const&)  (in dyld) + 424  [0x188ead020]
+    + !                                                                   1 dyld4::PrebuiltLoader::loadDependents(Diagnostics&, dyld4::RuntimeState&, dyld4::Loader::LoadOptions const&)  (in dyld) + 424  [0x188ead020]
+    + !                                                                     1 dyld4::PrebuiltLoader::loadDependents(Diagnostics&, dyld4::RuntimeState&, dyld4::Loader::LoadOptions const&)  (in dyld) + 424  [0x188ead020]
+    + !                                                                       1 dyld4::PrebuiltLoader::loadDependents(Diagnostics&, dyld4::RuntimeState&, dyld4::Loader::LoadOptions const&)  (in dyld) + 424  [0x188ead020]
+    + !                                                                         1 dyld4::PrebuiltLoader::loadDependents(Diagnostics&, dyld4::RuntimeState&, dyld4::Loader::LoadOptions const&)  (in dyld) + 424  [0x188ead020]
+    + !                                                                           1 dyld4::PrebuiltLoader::loadDependents(Diagnostics&, dyld4::RuntimeState&, dyld4::Loader::LoadOptions const&)  (in dyld) + 424  [0x188ead020]
+    + !                                                                             1 dyld4::PrebuiltLoader::loadDependents(Diagnostics&, dyld4::RuntimeState&, dyld4::Loader::LoadOptions const&)  (in dyld) + 424  [0x188ead020]
+    + !                                                                               1 dyld4::PrebuiltLoader::loadDependents(Diagnostics&, dyld4::RuntimeState&, dyld4::Loader::LoadOptions const&)  (in dyld) + 424  [0x188ead020]
+    + !                                                                                 1 dyld4::PrebuiltLoader::loadDependents(Diagnostics&, dyld4::RuntimeState&, dyld4::Loader::LoadOptions const&)  (in dyld) + 424  [0x188ead020]
+    + !                                                                                   1 dyld4::PrebuiltLoader::loadDependents(Diagnostics&, dyld4::RuntimeState&, dyld4::Loader::LoadOptions const&)  (in dyld) + 264  [0x188eacf80]
+    + !                                                                                     1 dyld4::PrebuiltLoader::map(Diagnostics&, dyld4::RuntimeState&, dyld4::Loader::LoadOptions const&, bool) const  (in dyld) + 916  [0x188eace28]
+    + !                                                                                       1 dyld4::RuntimeState::add(dyld4::Loader const*)  (in dyld) + 64  [0x188e9021c]
+    + !                                                                                         1 <deduplicated_symbol>  (in dyld) + 80  [0x188e88238]
+    + !                                                                                           1 lsl::Allocator::aligned_alloc(unsigned long long, unsigned long long)  (in dyld) + 152  [0x188eb2af8]
+    + !                                                                                             1 lsl::Allocator::Pool::aligned_alloc(unsigned long long, unsigned long long)  (in dyld) + 200  [0x188eb2dc0]
+    + !                                                                                               1 lsl::Allocator::AllocationMetadata::AllocationMetadata(lsl::Allocator::AllocationMetadata*, unsigned long long, unsigned long long, unsigned long long)  (in dyld) + 44  [0x188eb3588]
+    + 3 start  (in dyld) + 4076  [0x188e85130]
+    + ! 3 dyld4::ExternallyViewableState::createMinimalInfo(lsl::Allocator&, unsigned long long, char const*, unsigned long long, char const*, DyldSharedCache const*)  (in dyld) + 1660  [0x188eccd80]
+    + !   3 dyld4::ExternallyViewableState::triggerNotifications(dyld_image_mode, unsigned int, dyld_image_info const*)  (in dyld) + 264  [0x188ecd554]
+    + !     3 dyld4::RemoteNotificationResponder::blockOnSynchronousEvent(unsigned int)  (in dyld) + 48  [0x188eb6aec]
+    + !       3 dyld4::RemoteNotificationResponder::sendMessage(int, unsigned int, mach_msg_header_t*)  (in dyld) + 220  [0x188eb6760]
+    + !         3 mach_msg_overwrite  (in dyld) + 244  [0x188f05454]
+    + !           3 mach_msg2_internal  (in dyld) + 76  [0x188f052a8]
+    + !             3 mach_msg2_trap  (in dyld) + 8  [0x188e7e72c]
+    + 1 start  (in dyld) + 524  [0x1031b7350]
+    + ! 1 lsl::MemoryManager::init(char const**, char const**, void*)  (in dyld) + 728  [0x1031e545c]
+    + !   1 lsl::MemoryManager::writeProtect(bool)  (in dyld) + 144  [0x1031e5598]
+    + !     1 vm_protect  (in dyld) + 312  [0x1031b54c4]
+    + 1 start  (in dyld) + 6996  [0x188e85c98]
+    +   1 dyld4::ProcessConfig::ProcessConfig(dyld4::KernelArgs const*, dyld4::SyscallDelegate&, lsl::Allocator&)  (in dyld) + 60  [0x188e88a70]
+    +     1 dyld4::ProcessConfig::Process::Process(dyld4::KernelArgs const*, dyld4::SyscallDelegate&, lsl::Allocator&)  (in dyld) + 272  [0x188e89da0]
+    +       1 dyld4::ProcessConfig::Process::getDyldPath(dyld4::SyscallDelegate&, lsl::Allocator&)  (in dyld) + 76  [0x188e8a3d4]
+    +         1 dyld4::SyscallDelegate::fsgetpath(char*, unsigned long, unsigned long long, unsigned long long) const  (in dyld) + 44  [0x188eb12d4]
+    +           1 fsgetpath  (in dyld) + 8  [0x188e83374]
+    232 Thread_1686845   DispatchQueue_1: com.apple.main-thread  (serial)
+      231 start  (in dyld) + 7184  [0x188e85d54]
+      ! 231 main  (in perf-probe) + 3808  [0x102fd56c8]  start.zig:602
+      !   167 perf_probe.queryProbe  (in perf-probe) + 404  [0x102fd254c]  perf_probe.zig:117
+      !   : 164 internal.engine.ReaderFor(fs.File).rangeInto  (in perf-probe) + 4072,4052,...  [0x102fd2320,0x102fd230c,...]  engine.zig:644
+      !   : 3 internal.engine.ReaderFor(fs.File).rangeInto  (in perf-probe) + 28  [0x102fd1354]  engine.zig:642
+      !   61 perf_probe.queryProbe  (in perf-probe) + 100  [0x102fd241c]  perf_probe.zig:102
+      !   : 53 perf_probe.buildData  (in perf-probe) + 248  [0x102fcf3c4]  perf_probe.zig:95
+      !   : | 44 internal.engine.AppenderFor(fs.File).appendBatch  (in perf-probe) + 216  [0x102fcd7a4]  engine.zig:250
+      !   : | + 31 internal.engine.AppenderFor(fs.File).flushSeries  (in perf-probe) + 184,188  [0x102fcd458,0x102fcd45c]  engine.zig:406
+      !   : | + 13 internal.engine.AppenderFor(fs.File).flushSeries  (in perf-probe) + 424  [0x102fcd548]  engine.zig:411
+      !   : | +   13 posix.pwrite  (in perf-probe) + 84  [0x102fd706c]  posix.zig:1458
+      !   : | +     13 pwrite  (in libsystem_kernel.dylib) + 8  [0x18920e41c]
+      !   : | 8 internal.engine.AppenderFor(fs.File).appendBatch  (in perf-probe) + 88  [0x102fcd724]  engine.zig:237
+      !   : | + 7 internal.engine.findSeriesByName__anon_2954  (in perf-probe) + 104,116,...  [0x102fccf60,0x102fccf6c,...]  engine.zig:807
+      !   : | + 1 internal.engine.AppenderFor(fs.File).appendBatch  (in perf-probe) + 100  [0x102fcd730]  engine.zig:244
+      !   : | 1 perf_probe.buildData  (in perf-probe) + 248  [0x102fcf3c4]  perf_probe.zig:95
+      !   : |   1 internal.engine.AppenderFor(fs.File).appendBatch  (in perf-probe) + 68  [0x102fcd710]  engine.zig:239
+      !   : 5 perf_probe.buildData  (in perf-probe) + 204  [0x102fcf398]  perf_probe.zig:94
+      !   : | 2 perf_probe.buildData  (in perf-probe) + 204  [0x102fcf398]  perf_probe.zig:94
+      !   : | + 1 ???  (in libsystem_m.dylib)  load address 0x198b78000 + 0x1120  [0x198b79120]
+      !   : | + 1 ???  (in libsystem_m.dylib)  load address 0x198b78000 + 0x1150  [0x198b79150]
+      !   : | 2 sin  (in libsystem_m.dylib) + 0,24  [0x198b78968,0x198b78980]
+      !   : | 1 DYLD-STUB$$sin  (in perf-probe) + 4  [0x102fda8cc]
+      !   : 1 perf_probe.buildData  (in perf-probe) + 244  [0x102fcf3c0]  perf_probe.zig:95
+      !   : 1 perf_probe.buildData  (in perf-probe) + 256  [0x102fcf3cc]  perf_probe.zig:96
+      !   : 1 perf_probe.buildData  (in perf-probe) + 276  [0x102fcf3e0]  perf_probe.zig:97
+      !   :   1 internal.engine.AppenderFor(fs.File).close  (in perf-probe) + 172  [0x102fceb4c]  engine.zig:339
+      !   :     1 __close_nocancel  (in libsystem_kernel.dylib) + 8  [0x18920c570]
+      !   1 internal.engine.ReaderFor(fs.File).rangeInto  (in perf-probe) + 4172  [0x102fd2384]  engine.zig:0
+      !   1 perf_probe.queryProbe  (in perf-probe) + 124  [0x102fd2434]  perf_probe.zig:104
+      !   : 1 internal.engine.ReaderFor(fs.File).open  (in perf-probe) + 508  [0x102fd0b10]  engine.zig:517
+      !   :   1 fs.File.preadAll  (in perf-probe) + 88  [0x102fcf454]  File.zig:880
+      !   :     1 pread  (in libsystem_kernel.dylib) + 8  [0x18920c63c]
+      !   1 perf_probe.queryProbe  (in perf-probe) + 424  [0x102fd2560]  perf_probe.zig:119
+      1 start  (in dyld) + 7104  [0x188e85d04]
+        1 dyld4::prepare(dyld4::APIs&, mach_o::Header const*)  (in dyld) + 3112  [0x188e87158]
+          1 dyld4::APIs::runAllInitializersForMain()  (in dyld) + 104  [0x188ec4f24]
+            1 dyld4::ExternallyViewableState::setLibSystemInitialized()  (in dyld) + 28  [0x188ecd72c]
+              1 dyld4::ExternallyViewableState::setDyldState(unsigned char)  (in dyld) + 148  [0x188ecbcb8]
+                1 dyld4::ExternallyViewableState::generateAtlas(lsl::Allocator&)  (in dyld) + 752  [0x188ecc0dc]
+                  1 AAREncoder::encode(ByteStream&) const  (in dyld) + 140  [0x188eb71e0]
+                    1 AAREncoder::encodeFile(AAREncoder::File const&, ByteStream&) const  (in dyld) + 40  [0x188eb6c08]
+                      1 cksum(std::span<std::byte, 18446744073709551615ul>)  (in dyld) + 28  [0x188ee520c]
+
+Total number in stack (recursive counted multiple, when >=5):
+        39       dyld4::PrebuiltLoader::loadDependents(Diagnostics&, dyld4::RuntimeState&, dyld4::Loader::LoadOptions const&)  (in dyld) + 424  [0x188ead020]
+
+Sort by top of stack, same collapsed (when >= 5):
+        _dyld_start  (in dyld)        520
+        internal.engine.ReaderFor(fs.File).rangeInto  (in perf-probe)        168
+        internal.engine.AppenderFor(fs.File).flushSeries  (in perf-probe)        31
+        mach_msg2_trap  (in dyld)        31
+        pwrite  (in libsystem_kernel.dylib)        13
+        internal.engine.findSeriesByName__anon_2954  (in perf-probe)        7
+
+Binary images description not available

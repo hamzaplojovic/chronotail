@@ -1,0 +1,20 @@
+outlined-1
+width=1 queries=3000000 queries_per_second=10636281.580 points_per_second=10636281.580
+inline-1
+width=1 queries=3000000 queries_per_second=9479536.567 points_per_second=9479536.567
+outlined-2
+width=1 queries=3000000 queries_per_second=9488676.329 points_per_second=9488676.329
+inline-2
+width=1 queries=3000000 queries_per_second=11301611.280 points_per_second=11301611.280
+outlined-3
+width=1 queries=3000000 queries_per_second=10995737.319 points_per_second=10995737.319
+inline-3
+width=1 queries=3000000 queries_per_second=12215659.355 points_per_second=12215659.355
+outlined-4
+width=1 queries=3000000 queries_per_second=10655726.787 points_per_second=10655726.787
+inline-4
+width=1 queries=3000000 queries_per_second=11730346.685 points_per_second=11730346.685
+outlined-5
+width=1 queries=3000000 queries_per_second=8342875.497 points_per_second=8342875.497
+inline-5
+width=1 queries=3000000 queries_per_second=8484547.820 points_per_second=8484547.820

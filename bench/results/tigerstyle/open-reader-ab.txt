@@ -1,0 +1,12 @@
+pre-1
+opens_per_second=4892.273 average_open_ns=204403.954
+tiger-1
+opens_per_second=4885.643 average_open_ns=204681.363
+pre-2
+opens_per_second=4854.012 average_open_ns=206015.167
+tiger-2
+opens_per_second=5094.729 average_open_ns=196281.296
+pre-3
+opens_per_second=4897.760 average_open_ns=204174.963
+tiger-3
+opens_per_second=5274.481 average_open_ns=189592.121

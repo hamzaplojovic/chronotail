@@ -1,0 +1,20 @@
+pre-eight-1
+series=8 records_per_second=13099666.564
+tiger-eight-1
+series=8 records_per_second=14774867.033
+pre-eight-2
+series=8 records_per_second=12492018.771
+tiger-eight-2
+series=8 records_per_second=13183878.687
+pre-eight-3
+series=8 records_per_second=13276073.628
+tiger-eight-3
+series=8 records_per_second=13427071.443
+pre-eight-4
+series=8 records_per_second=13146123.058
+tiger-eight-4
+series=8 records_per_second=13442926.794
+pre-eight-5
+series=8 records_per_second=13129472.021
+tiger-eight-5
+series=8 records_per_second=14003742.273

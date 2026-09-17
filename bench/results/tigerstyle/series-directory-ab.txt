@@ -1,0 +1,20 @@
+linear-1
+series=8 records_per_second=19972321.678
+hash-1
+series=8 records_per_second=18624314.974
+linear-2
+series=8 records_per_second=19016982.074
+hash-2
+series=8 records_per_second=19806475.876
+linear-3
+series=8 records_per_second=18334680.816
+hash-3
+series=8 records_per_second=18786903.067
+linear-4
+series=8 records_per_second=17440464.954
+hash-4
+series=8 records_per_second=22259153.868
+linear-5
+series=8 records_per_second=22212068.395
+hash-5
+series=8 records_per_second=22842962.833

@@ -1,0 +1,20 @@
+record-direct-1
+width=1 queries=3000000 queries_per_second=19184509.107 points_per_second=19184509.107
+block-direct-1
+width=1 queries=3000000 queries_per_second=20807739.092 points_per_second=20807739.092
+record-direct-2
+width=1 queries=3000000 queries_per_second=18583819.997 points_per_second=18583819.997
+block-direct-2
+width=1 queries=3000000 queries_per_second=16063006.307 points_per_second=16063006.307
+record-direct-3
+width=1 queries=3000000 queries_per_second=19284543.438 points_per_second=19284543.438
+block-direct-3
+width=1 queries=3000000 queries_per_second=20289200.094 points_per_second=20289200.094
+record-direct-4
+width=1 queries=3000000 queries_per_second=18520781.255 points_per_second=18520781.255
+block-direct-4
+width=1 queries=3000000 queries_per_second=17444632.640 points_per_second=17444632.640
+record-direct-5
+width=1 queries=3000000 queries_per_second=19054091.390 points_per_second=19054091.390
+block-direct-5
+width=1 queries=3000000 queries_per_second=17941944.389 points_per_second=17941944.389

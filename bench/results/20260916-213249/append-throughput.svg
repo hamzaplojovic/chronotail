@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="595" viewBox="0 0 900 595">
+<style>text{font-family:system-ui,sans-serif;font-size:14px}.title{font-size:20px;font-weight:600}.value{font-weight:600}</style>
+<text class="title" x="20" y="30">Single-series append throughput (median)</text>
+<text x="20" y="80">A-none / chronotail</text>
+<rect x="210" y="60" width="620.0" height="28" rx="3" fill="#2563eb"/>
+<text class="value" x="840.0" y="80">26.83 M records/s</text>
+<text x="20" y="135">A-none / nanots</text>
+<rect x="210" y="115" width="122.4" height="28" rx="3" fill="#ea580c"/>
+<text class="value" x="342.4" y="135">5.30 M records/s</text>
+<text x="20" y="190">A-none / sqlite</text>
+<rect x="210" y="170" width="37.8" height="28" rx="3" fill="#16a34a"/>
+<text class="value" x="257.8" y="190">1.64 M records/s</text>
+<text x="20" y="245">B-10MiB / chronotail</text>
+<rect x="210" y="225" width="554.1" height="28" rx="3" fill="#2563eb"/>
+<text class="value" x="774.1" y="245">23.98 M records/s</text>
+<text x="20" y="300">B-10MiB / nanots</text>
+<rect x="210" y="280" width="101.3" height="28" rx="3" fill="#ea580c"/>
+<text class="value" x="321.3" y="300">4.38 M records/s</text>
+<text x="20" y="355">B-10MiB / sqlite</text>
+<rect x="210" y="335" width="37.8" height="28" rx="3" fill="#16a34a"/>
+<text class="value" x="257.8" y="355">1.64 M records/s</text>
+<text x="20" y="410">C-1MiB / chronotail</text>
+<rect x="210" y="390" width="569.4" height="28" rx="3" fill="#2563eb"/>
+<text class="value" x="789.4" y="410">24.64 M records/s</text>
+<text x="20" y="465">C-1MiB / nanots</text>
+<rect x="210" y="445" width="92.2" height="28" rx="3" fill="#ea580c"/>
+<text class="value" x="312.2" y="465">3.99 M records/s</text>
+<text x="20" y="520">C-1MiB / sqlite</text>
+<rect x="210" y="500" width="36.5" height="28" rx="3" fill="#16a34a"/>
+<text class="value" x="256.5" y="520">1.58 M records/s</text>
+</svg>

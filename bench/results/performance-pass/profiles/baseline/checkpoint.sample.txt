@@ -1,0 +1,153 @@
+Analysis of sampling perf-probe (pid 90385) every 1 millisecond
+Process:         perf-probe [90385]
+Path:            /Users/USER/*/perf-probe
+Load Address:    0x104c28000
+Identifier:      perf-probe
+Version:         0
+Code Type:       ARM64
+Platform:        macOS
+Parent Process:  bash [90348]
+Target Type:     live task
+
+Date/Time:       2026-09-16 21:11:14.911 +0200
+Launch Time:     2026-09-16 21:11:14.499 +0200
+OS Version:      macOS 26.1 (25B78)
+Report Version:  7
+Analysis Tool:   /usr/bin/sample
+
+Physical footprint:         3537K
+Physical footprint (peak):  6049K
+Idle exit:                  untracked
+----
+
+Call graph:
+    2547 Thread_1167752   DispatchQueue_1: com.apple.main-thread  (serial)
+      2547 start  (in dyld) + 7184  [0x188e85d54]
+        2547 main  (in perf-probe) + 2540  [0x104c2e638]  start.zig:602
+          2344 perf_probe.checkpointProbe  (in perf-probe) + 164  [0x104c2da78]  perf_probe.zig:78
+          + 1003 internal.engine.AppenderFor(fs.File).checkpoint  (in perf-probe) + 72  [0x104c298e0]  engine.zig:195
+          + ! 583 internal.engine.AppenderFor(fs.File).flushSeries  (in perf-probe) + 384,388,...  [0x104c28f18,0x104c28f1c,...]  engine.zig:285
+          + ! 415 internal.engine.AppenderFor(fs.File).flushSeries  (in perf-probe) + 504  [0x104c28f90]  engine.zig:289
+          + ! : 415 posix.pwrite  (in perf-probe) + 84  [0x104c2f098]  posix.zig:1458
+          + ! :   415 pwrite  (in libsystem_kernel.dylib) + 8  [0x18920e41c]
+          + ! 4 internal.engine.AppenderFor(fs.File).flushSeries  (in perf-probe) + 332  [0x104c28ee4]  engine.zig:275
+          + ! : 4 _platform_memmove  (in libsystem_platform.dylib) + 180  [0x189257414]
+          + ! 1 internal.engine.AppenderFor(fs.File).flushSeries  (in perf-probe) + 572  [0x104c28fd4]  engine.zig:290
+          + !   1 array_list.Aligned(internal.engine.BlockIndex,null).ensureTotalCapacity  (in perf-probe) + 32  [0x104c2ebfc]  array_list.zig:1206
+          + 684 internal.engine.AppenderFor(fs.File).checkpoint  (in perf-probe) + 520,216,...  [0x104c29aa0,0x104c29970,...]  engine.zig:200
+          + 417 internal.engine.AppenderFor(fs.File).checkpoint  (in perf-probe) + 576  [0x104c29ad8]  engine.zig:200
+          + ! 417 posix.pwrite  (in perf-probe) + 84  [0x104c2f098]  posix.zig:1458
+          + !   417 pwrite  (in libsystem_kernel.dylib) + 8  [0x18920e41c]
+          + 70 internal.engine.AppenderFor(fs.File).checkpoint  (in perf-probe) + 672  [0x104c29b38]  engine.zig:200
+          + ! 70 posix.pwrite  (in perf-probe) + 84  [0x104c2f098]  posix.zig:1458
+          + !   70 pwrite  (in libsystem_kernel.dylib) + 8  [0x18920e41c]
+          + 48 internal.engine.AppenderFor(fs.File).checkpoint  (in perf-probe) + 732  [0x104c29b74]  engine.zig:200
+          + ! 48 heap.PageAllocator.free  (in perf-probe) + 28  [0x104c2f9f0]  PageAllocator.zig:141
+          + !   48 __munmap  (in libsystem_kernel.dylib) + 8  [0x18920e714]
+          + 33 internal.engine.AppenderFor(fs.File).checkpoint  (in perf-probe) + 3900  [0x104c2a7d4]  engine.zig:200
+          + ! 33 _platform_memmove  (in libsystem_platform.dylib) + 88,76  [0x1892573b8,0x1892573ac]
+          + 26 internal.engine.AppenderFor(fs.File).checkpoint  (in perf-probe) + 3372  [0x104c2a5c4]  engine.zig:200
+          + ! 26 _platform_memmove  (in libsystem_platform.dylib) + 88,76  [0x1892573b8,0x1892573ac]
+          + 18 internal.engine.AppenderFor(fs.File).checkpoint  (in perf-probe) + 3636  [0x104c2a6cc]  engine.zig:200
+          + ! 18 _platform_memmove  (in libsystem_platform.dylib) + 88  [0x1892573b8]
+          + 10 internal.engine.AppenderFor(fs.File).checkpoint  (in perf-probe) + 3084  [0x104c2a4a4]  engine.zig:200
+          + ! 10 _platform_memmove  (in libsystem_platform.dylib) + 88,76  [0x1892573b8,0x1892573ac]
+          + 9 internal.engine.AppenderFor(fs.File).checkpoint  (in perf-probe) + 192  [0x104c29958]  engine.zig:200
+          + ! 9 heap.PageAllocator.alloc  (in perf-probe) + 136  [0x104c2f830]  PageAllocator.zig:120
+          + !   9 mmap  (in libsystem_kernel.dylib) + 80  [0x18920b9a8]
+          + !     9 __mmap  (in libsystem_kernel.dylib) + 8  [0x18920ba04]
+          + 7 internal.engine.AppenderFor(fs.File).checkpoint  (in perf-probe) + 4416  [0x104c2a9d8]  engine.zig:200
+          + ! 7 _platform_memmove  (in libsystem_platform.dylib) + 88  [0x1892573b8]
+          + 6 internal.engine.AppenderFor(fs.File).checkpoint  (in perf-probe) + 3400  [0x104c2a5e0]  engine.zig:200
+          + ! 6 heap.PageAllocator.free  (in perf-probe) + 28  [0x104c2f9f0]  PageAllocator.zig:141
+          + !   6 __munmap  (in libsystem_kernel.dylib) + 8  [0x18920e714]
+          + 4 internal.engine.AppenderFor(fs.File).checkpoint  (in perf-probe) + 3932  [0x104c2a7f4]  engine.zig:200
+          + ! 4 heap.PageAllocator.free  (in perf-probe) + 28  [0x104c2f9f0]  PageAllocator.zig:141
+          + !   4 __munmap  (in libsystem_kernel.dylib) + 8  [0x18920e714]
+          + 3 internal.engine.AppenderFor(fs.File).checkpoint  (in perf-probe) + 3664  [0x104c2a6e8]  engine.zig:200
+          + ! 3 heap.PageAllocator.free  (in perf-probe) + 28  [0x104c2f9f0]  PageAllocator.zig:141
+          + !   3 __munmap  (in libsystem_kernel.dylib) + 8  [0x18920e714]
+          + 2 internal.engine.AppenderFor(fs.File).checkpoint  (in perf-probe) + 3116  [0x104c2a4c4]  engine.zig:200
+          + ! 2 heap.PageAllocator.free  (in perf-probe) + 28  [0x104c2f9f0]  PageAllocator.zig:141
+          + !   2 __munmap  (in libsystem_kernel.dylib) + 8  [0x18920e714]
+          + 1 internal.engine.AppenderFor(fs.File).checkpoint  (in perf-probe) + 92  [0x104c298f4]  engine.zig:196
+          + 1 internal.engine.AppenderFor(fs.File).checkpoint  (in perf-probe) + 2984  [0x104c2a440]  engine.zig:200
+          + ! 1 heap.PageAllocator.remap  (in perf-probe) + 0  [0x104c2f974]  PageAllocator.zig:130
+          + 1 internal.engine.AppenderFor(fs.File).checkpoint  (in perf-probe) + 3352  [0x104c2a5b0]  engine.zig:200
+          + ! 1 heap.PageAllocator.alloc  (in perf-probe) + 136  [0x104c2f830]  PageAllocator.zig:120
+          + !   1 mmap  (in libsystem_kernel.dylib) + 80  [0x18920b9a8]
+          + !     1 __mmap  (in libsystem_kernel.dylib) + 8  [0x18920ba04]
+          + 1 internal.engine.AppenderFor(fs.File).checkpoint  (in perf-probe) + 4448  [0x104c2a9f8]  engine.zig:200
+          +   1 heap.PageAllocator.free  (in perf-probe) + 28  [0x104c2f9f0]  PageAllocator.zig:141
+          +     1 __munmap  (in libsystem_kernel.dylib) + 8  [0x18920e714]
+          179 perf_probe.checkpointProbe  (in perf-probe) + 136  [0x104c2da5c]  perf_probe.zig:77
+          + 154 internal.engine.AppenderFor(fs.File).append  (in perf-probe) + 48,492,...  [0x104c295d8,0x104c29794,...]  engine.zig:153
+          + 16 array_list.Aligned(internal.engine.BlockIndex,null).ensureTotalCapacity  (in perf-probe) + 156,144  [0x104c2ec78,0x104c2ec6c]  array_list.zig:0
+          + 9 internal.engine.AppenderFor(fs.File).append  (in perf-probe) + 588  [0x104c297f4]  engine.zig:153
+          +   9 array_list.Aligned(internal.engine.BlockIndex,null).ensureTotalCapacity  (in perf-probe) + 32  [0x104c2ebfc]  array_list.zig:1206
+          16 perf_probe.checkpointProbe  (in perf-probe) + 144  [0x104c2da64]  perf_probe.zig:77
+          8 internal.engine.AppenderFor(fs.File).append  (in perf-probe) + 716  [0x104c29874]  engine.zig:153
+
+Total number in stack (recursive counted multiple, when >=5):
+        6       __munmap  (in libsystem_kernel.dylib) + 0  [0x18920e70c]
+        6       _platform_memmove  (in libsystem_platform.dylib) + 0  [0x189257360]
+        6       heap.PageAllocator.free  (in perf-probe) + 28  [0x104c2f9f0]  PageAllocator.zig:141
+
+Sort by top of stack, same collapsed (when >= 5):
+        pwrite  (in libsystem_kernel.dylib)        902
+        internal.engine.AppenderFor(fs.File).checkpoint  (in perf-probe)        685
+        internal.engine.AppenderFor(fs.File).flushSeries  (in perf-probe)        583
+        internal.engine.AppenderFor(fs.File).append  (in perf-probe)        162
+        _platform_memmove  (in libsystem_platform.dylib)        98
+        __munmap  (in libsystem_kernel.dylib)        64
+        array_list.Aligned(internal.engine.BlockIndex,null).ensureTotalCapacity  (in perf-probe)        26
+        perf_probe.checkpointProbe  (in perf-probe)        16
+        __mmap  (in libsystem_kernel.dylib)        10
+
+Binary Images:
+       0x104c28000 -        0x104c32e67 +perf-probe (0) <04A18635-EA9A-32DF-81AC-B3A639B6DC31> /Users/*/perf-probe
+       0x188df8000 -        0x188e4b48b  libobjc.A.dylib (951.1) <5A0AAB4E-0C1A-3680-82C9-43DC4007A6E7> /usr/lib/libobjc.A.dylib
+       0x188e4c000 -        0x188e7cbcb  libdyld.dylib (1330) <A64128D9-375B-36AE-8FEB-69D80F987D3C> /usr/lib/system/libdyld.dylib
+       0x188e7d000 -        0x188f1bf63  dyld (1.0.0 - 1330) <B50F5A1A-BE81-3068-92E1-3554F2BE478A> /usr/lib/dyld
+       0x188f1c000 -        0x188f1f1d0  libsystem_blocks.dylib (96) <F17000B3-F871-3590-B604-7C4A13EAE01C> /usr/lib/system/libsystem_blocks.dylib
+       0x188f20000 -        0x188f74f7f  libxpc.dylib (3089.41.2) <8346BE50-DE08-3606-9FB6-9A352975661D> /usr/lib/system/libxpc.dylib
+       0x188f75000 -        0x188f9581f  libsystem_trace.dylib (1815.40.20) <4D6C380B-736B-312F-B8E3-47E6C10DF033> /usr/lib/system/libsystem_trace.dylib
+       0x188f96000 -        0x18904254f  libcorecrypto.dylib (1922.40.14) <9E80591D-F3C9-3DAA-95BB-10BB4C313A84> /usr/lib/system/libcorecrypto.dylib
+       0x189043000 -        0x18908ebef  libsystem_malloc.dylib (792.41.1) <8A4825B5-E480-3A53-B35B-B90DCB34EE46> /usr/lib/system/libsystem_malloc.dylib
+       0x18908f000 -        0x1890d5e9f  libdispatch.dylib (1542.0.4) <8FB392AE-401F-399A-96AE-41531CF91162> /usr/lib/system/libdispatch.dylib
+       0x1890d6000 -        0x1890d8feb  libsystem_featureflags.dylib (101) <37F5A64F-CD19-3146-AA3D-7EED47C7B4DE> /usr/lib/system/libsystem_featureflags.dylib
+       0x1890d9000 -        0x18915b047  libsystem_c.dylib (1725.40.4) <9F5BD98B-9367-3594-933B-16F392C2A5F8> /usr/lib/system/libsystem_c.dylib
+       0x18915c000 -        0x1891eee53  libc++.1.dylib (2000.63) <B29F2164-26B0-3016-A871-82DE5A4637FF> /usr/lib/libc++.1.dylib
+       0x1891ef000 -        0x18920992f  libc++abi.dylib (2000.63) <94052F7C-7016-32FF-9FEF-EEFAE55A2ADB> /usr/lib/libc++abi.dylib
+       0x18920a000 -        0x18924649f  libsystem_kernel.dylib (12377.41.6) <9FE7C84D-0C2B-363F-BEE5-6FD76D67A227> /usr/lib/system/libsystem_kernel.dylib
+       0x189247000 -        0x189253abb  libsystem_pthread.dylib (539) <E95973B8-824C-361E-ADF4-390747C40897> /usr/lib/system/libsystem_pthread.dylib
+       0x189254000 -        0x18925c3bf  libsystem_platform.dylib (359.40.3) <530FC11D-A495-375D-B2B9-81AE3E701781> /usr/lib/system/libsystem_platform.dylib
+       0x18925d000 -        0x18928ce23  libsystem_info.dylib (600) <62637EA2-0B6F-3695-9009-7E08AD4FC2F3> /usr/lib/system/libsystem_info.dylib
+       0x18d1f7000 -        0x18d201397  libsystem_darwin.dylib (1725.40.4) <786F353E-9012-3409-A7DF-08FB7E8C21CC> /usr/lib/system/libsystem_darwin.dylib
+       0x18d668000 -        0x18d679ff3  libsystem_notify.dylib (344.0.1) <24C492E0-C65F-3432-9337-90ED0C1EB2CD> /usr/lib/system/libsystem_notify.dylib
+       0x18f93f000 -        0x18f959fdb  libsystem_networkextension.dylib (2205.41.2) <6110390E-A0DB-38B4-AF8E-D6DC1F92C355> /usr/lib/system/libsystem_networkextension.dylib
+       0x18f9dd000 -        0x18f9f4ff3  libsystem_asl.dylib (404) <4B1F55B9-88E1-3B61-8A2B-B9D471D1E964> /usr/lib/system/libsystem_asl.dylib
+       0x191583000 -        0x19158b3a7  libsystem_symptoms.dylib (2158.40.9) <7F3D95B2-C8F6-3604-A6A4-54C8056FA9B7> /usr/lib/system/libsystem_symptoms.dylib
+       0x1954eb000 -        0x1955232bb  libsystem_containermanager.dylib (725.40.12) <4AA81635-2296-3F01-93AE-0089169C0344> /usr/lib/system/libsystem_containermanager.dylib
+       0x196935000 -        0x19693966f  libsystem_configuration.dylib (1385.40.9) <ED3639AF-44FD-37EE-8B7F-1A840E23D5AD> /usr/lib/system/libsystem_configuration.dylib
+       0x19693a000 -        0x1969406a7  libsystem_sandbox.dylib (2680.41.1) <D3C3FE0A-BFEE-34D2-B3F6-3C7B6A4407CE> /usr/lib/system/libsystem_sandbox.dylib
+       0x197eb4000 -        0x197eb71fb  libquarantine.dylib (196.40.3) <76BD9E76-E9B4-3D8F-9675-51A86391C86F> /usr/lib/system/libquarantine.dylib
+       0x198637000 -        0x19863df4f  libsystem_coreservices.dylib (191.1.2.200) <1617C3D3-68FD-3970-BCFF-A623344E510E> /usr/lib/system/libsystem_coreservices.dylib
+       0x198b78000 -        0x198bb58b7  libsystem_m.dylib (3309) <219BCAAB-9FBB-3DAD-8B02-EF30D40BF21A> /usr/lib/system/libsystem_m.dylib
+       0x198bb7000 -        0x198bba537  libmacho.dylib (1030.6.3) <02B180AE-8EB8-3D0A-A088-8B7751BD6B5D> /usr/lib/system/libmacho.dylib
+       0x198bd4000 -        0x198be162f  libcommonCrypto.dylib (600035) <1C618B53-3317-3D31-A19D-94E2142BC0BA> /usr/lib/system/libcommonCrypto.dylib
+       0x198be2000 -        0x198bebb0b  libunwind.dylib (1900.125) <4A2DAFEF-0FC7-3CBD-9A8D-A6D2ED8EF115> /usr/lib/system/libunwind.dylib
+       0x198bf4000 -        0x198bfe6ff  libcopyfile.dylib (230.0.1.0.1) <6490C0C2-9700-3F37-A413-58B5E1FF285E> /usr/lib/system/libcopyfile.dylib
+       0x198bff000 -        0x198c0295f  libcompiler_rt.dylib (103.3) <3BA72D71-990F-3911-87B3-50F0EA714198> /usr/lib/system/libcompiler_rt.dylib
+       0x198c03000 -        0x198c07a1b  libsystem_collections.dylib (1725.40.4) <669A1A2D-8694-3E02-B154-D970AFC2CE31> /usr/lib/system/libsystem_collections.dylib
+       0x198c08000 -        0x198c0b4bf  libsystem_secinit.dylib (168.40.2) <EB462CEE-C06C-3E1D-8817-ACC597C4C995> /usr/lib/system/libsystem_secinit.dylib
+       0x198c0c000 -        0x198c0eb57  libremovefile.dylib (84) <6F90FCF4-6046-33C5-A583-19620A6E226E> /usr/lib/system/libremovefile.dylib
+       0x198c0f000 -        0x198c0ff27  libkeymgr.dylib (31) <413ACA7C-28E4-3BF2-8535-2A3F3F9BCBAC> /usr/lib/system/libkeymgr.dylib
+       0x198c10000 -        0x198c18f87  libsystem_dnssd.dylib (2881.40.18) <C034FE5E-54C1-3D7C-BF3F-86F87908763F> /usr/lib/system/libsystem_dnssd.dylib
+       0x198c19000 -        0x198c1e0b3  libcache.dylib (95) <5A47A904-437B-3455-8117-E7C5D72F08F2> /usr/lib/system/libcache.dylib
+       0x198c1f000 -        0x198c20cf3  libSystem.B.dylib (1356) <AE3A4D1A-7CE2-360E-920A-4B1223336609> /usr/lib/libSystem.B.dylib
+       0x2822b3000 -        0x2822ba319  libRosetta.dylib (365.3) <033B4378-3705-3580-8FB1-8DB5688DE702> /usr/lib/libRosetta.dylib
+       0x2839d8000 -        0x2839dbdeb  libsystem_darwindirectory.dylib (122) <9B373C44-0144-3CCD-86B5-D6EBD4E7D7E8> /usr/lib/system/libsystem_darwindirectory.dylib
+       0x2839dc000 -        0x2839e339b  libsystem_eligibility.dylib (286.40.9.0.1) <9008D680-86FF-3811-923A-77087AE9FC8B> /usr/lib/system/libsystem_eligibility.dylib
+       0x2839e4000 -        0x2839eb873  libsystem_sanitizers.dylib (25) <EEA7F32D-849B-315B-8017-2F3313F13E32> /usr/lib/system/libsystem_sanitizers.dylib
+       0x2839ec000 -        0x2839ecbb7  libsystem_trial.dylib (474.3) <40FCA195-78F6-3415-957E-23BAC002B9C8> /usr/lib/system/libsystem_trial.dylib

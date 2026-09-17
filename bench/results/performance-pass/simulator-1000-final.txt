@@ -1,0 +1,14 @@
+PASSED
+seeds passed: 1000
+operations executed: 100000000
+simulated crashes: 916
+short writes: 815
+failed writes: 794
+truncations: 5989
+corruptions: 5961
+checkpoint/reopen cycles: 59114
+invariant failures: 0
+total runtime: 129.350s
+real 129.64
+user 94.28
+sys 34.21

@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="485" viewBox="0 0 900 485">
+<style>text{font-family:system-ui,sans-serif;font-size:14px}.title{font-size:20px;font-weight:600}.value{font-weight:600}</style>
+<text class="title" x="20" y="30">Warm query throughput (median)</text>
+<text x="20" y="80">point-lookup-warm / chronotail</text>
+<rect x="210" y="60" width="378.3" height="28" rx="3" fill="#2563eb"/>
+<text class="value" x="598.3" y="80">852.79 k queries/s</text>
+<text x="20" y="135">point-lookup-warm / nanots</text>
+<rect x="210" y="115" width="620.0" height="28" rx="3" fill="#ea580c"/>
+<text class="value" x="840.0" y="135">1397.66 k queries/s</text>
+<text x="20" y="190">point-lookup-warm / sqlite</text>
+<rect x="210" y="170" width="92.5" height="28" rx="3" fill="#16a34a"/>
+<text class="value" x="312.5" y="190">208.62 k queries/s</text>
+<text x="20" y="245">range-100-raw-warm / chronotail</text>
+<rect x="210" y="225" width="347.4" height="28" rx="3" fill="#2563eb"/>
+<text class="value" x="567.4" y="245">783.12 k queries/s</text>
+<text x="20" y="300">range-100-raw-warm / nanots</text>
+<rect x="210" y="280" width="47.0" height="28" rx="3" fill="#ea580c"/>
+<text class="value" x="267.0" y="300">106.01 k queries/s</text>
+<text x="20" y="355">range-100-raw-warm / sqlite</text>
+<rect x="210" y="335" width="24.4" height="28" rx="3" fill="#16a34a"/>
+<text class="value" x="244.4" y="355">55.02 k queries/s</text>
+<text x="20" y="410">range compressed / chronotail</text>
+<rect x="210" y="390" width="77.4" height="28" rx="3" fill="#2563eb"/>
+<text class="value" x="297.4" y="410">174.46 k queries/s</text>
+</svg>

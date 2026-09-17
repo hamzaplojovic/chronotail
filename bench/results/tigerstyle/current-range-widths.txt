@@ -1,0 +1,6 @@
+width=1 queries=5000000 queries_per_second=21395542.030 points_per_second=21395542.030
+width=10 queries=3000000 queries_per_second=13944240.876 points_per_second=139442408.758
+width=100 queries=1000000 queries_per_second=5748274.440 points_per_second=574827443.987
+width=1000 queries=100000 queries_per_second=1082571.320 points_per_second=1082571319.501
+width=10000 queries=10000 queries_per_second=113748.658 points_per_second=1137486581.213
+width=1000000 queries=100 queries_per_second=929.944 points_per_second=929943843.016

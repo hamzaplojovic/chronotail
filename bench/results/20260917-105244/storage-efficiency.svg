@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="540" viewBox="0 0 900 540">
+<style>text{font-family:system-ui,sans-serif;font-size:14px}.title{font-size:20px;font-weight:600}.value{font-weight:600}</style>
+<text class="title" x="20" y="30">Storage efficiency (lower is better)</text>
+<text x="20" y="80">smooth / Chronotail raw</text>
+<rect x="210" y="60" width="124.1" height="28" rx="3" fill="#2563eb"/>
+<text class="value" x="344.1" y="80">16.02 bytes/point</text>
+<text x="20" y="135">smooth / Chronotail compressed</text>
+<rect x="210" y="115" width="55.6" height="28" rx="3" fill="#2563eb"/>
+<text class="value" x="275.6" y="135">7.18 bytes/point</text>
+<text x="20" y="190">smooth / NanoTS</text>
+<rect x="210" y="170" width="620.0" height="28" rx="3" fill="#ea580c"/>
+<text class="value" x="840.0" y="190">80.02 bytes/point</text>
+<text x="20" y="245">smooth / SQLite</text>
+<rect x="210" y="225" width="289.9" height="28" rx="3" fill="#16a34a"/>
+<text class="value" x="509.9" y="245">37.42 bytes/point</text>
+<text x="20" y="300">random / Chronotail raw</text>
+<rect x="210" y="280" width="124.1" height="28" rx="3" fill="#2563eb"/>
+<text class="value" x="344.1" y="300">16.02 bytes/point</text>
+<text x="20" y="355">random / Chronotail compressed</text>
+<rect x="210" y="335" width="83.6" height="28" rx="3" fill="#2563eb"/>
+<text class="value" x="303.6" y="355">10.78 bytes/point</text>
+<text x="20" y="410">random / NanoTS</text>
+<rect x="210" y="390" width="620.0" height="28" rx="3" fill="#ea580c"/>
+<text class="value" x="840.0" y="410">80.02 bytes/point</text>
+<text x="20" y="465">random / SQLite</text>
+<rect x="210" y="445" width="289.9" height="28" rx="3" fill="#16a34a"/>
+<text class="value" x="509.9" y="465">37.42 bytes/point</text>
+</svg>

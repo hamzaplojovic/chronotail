@@ -1,0 +1,55 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="818" viewBox="0 0 1000 818">
+<style>text{font-family:system-ui,sans-serif;font-size:13px}.t{font-size:20px;font-weight:600}.v{font-weight:600}</style>
+<text x="20" y="28" class="t">Chronotail median throughput improvement</text>
+<text x="20" y="69">append-8-series</text>
+<rect x="290" y="50" width="109.9" height="26" rx="3" fill="#2563eb"/>
+<text x="409.9" y="69" class="v">1.22×</text>
+<text x="20" y="113">append-A-none</text>
+<rect x="290" y="94" width="112.5" height="26" rx="3" fill="#2563eb"/>
+<text x="412.5" y="113" class="v">1.25×</text>
+<text x="20" y="157">append-B-10MiB</text>
+<rect x="290" y="138" width="92.3" height="26" rx="3" fill="#2563eb"/>
+<text x="392.3" y="157" class="v">1.03×</text>
+<text x="20" y="201">append-C-1MiB</text>
+<rect x="290" y="182" width="102.6" height="26" rx="3" fill="#2563eb"/>
+<text x="402.6" y="201" class="v">1.14×</text>
+<text x="20" y="245">concurrent-1-readers</text>
+<rect x="290" y="226" width="439.8" height="26" rx="3" fill="#2563eb"/>
+<text x="739.8" y="245" class="v">4.89×</text>
+<text x="20" y="289">concurrent-1-writer</text>
+<rect x="290" y="270" width="160.1" height="26" rx="3" fill="#2563eb"/>
+<text x="460.1" y="289" class="v">1.78×</text>
+<text x="20" y="333">concurrent-32-readers</text>
+<rect x="290" y="314" width="613.1" height="26" rx="3" fill="#2563eb"/>
+<text x="913.1" y="333" class="v">6.82×</text>
+<text x="20" y="377">concurrent-32-writer</text>
+<rect x="290" y="358" width="236.2" height="26" rx="3" fill="#2563eb"/>
+<text x="536.2" y="377" class="v">2.63×</text>
+<text x="20" y="421">concurrent-8-readers</text>
+<rect x="290" y="402" width="650.0" height="26" rx="3" fill="#2563eb"/>
+<text x="950.0" y="421" class="v">7.23×</text>
+<text x="20" y="465">concurrent-8-writer</text>
+<rect x="290" y="446" width="179.8" height="26" rx="3" fill="#2563eb"/>
+<text x="479.8" y="465" class="v">2.00×</text>
+<text x="20" y="509">point-lookup-warm</text>
+<rect x="290" y="490" width="282.8" height="26" rx="3" fill="#2563eb"/>
+<text x="582.8" y="509" class="v">3.15×</text>
+<text x="20" y="553">range-100-compressed-warm</text>
+<rect x="290" y="534" width="169.6" height="26" rx="3" fill="#2563eb"/>
+<text x="469.6" y="553" class="v">1.89×</text>
+<text x="20" y="597">range-100-raw-warm</text>
+<rect x="290" y="578" width="199.4" height="26" rx="3" fill="#2563eb"/>
+<text x="499.4" y="597" class="v">2.22×</text>
+<text x="20" y="641">storage-random-compressed</text>
+<rect x="290" y="622" width="276.7" height="26" rx="3" fill="#2563eb"/>
+<text x="576.7" y="641" class="v">3.08×</text>
+<text x="20" y="685">storage-random-raw</text>
+<rect x="290" y="666" width="105.2" height="26" rx="3" fill="#2563eb"/>
+<text x="405.2" y="685" class="v">1.17×</text>
+<text x="20" y="729">storage-smooth-compressed</text>
+<rect x="290" y="710" width="268.4" height="26" rx="3" fill="#2563eb"/>
+<text x="568.4" y="729" class="v">2.99×</text>
+<text x="20" y="773">storage-smooth-raw</text>
+<rect x="290" y="754" width="103.9" height="26" rx="3" fill="#2563eb"/>
+<text x="403.9" y="773" class="v">1.16×</text>
+</svg>

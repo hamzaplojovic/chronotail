@@ -1,0 +1,20 @@
+outlined-append-1
+series=1 records_per_second=14413699.349
+inline-append-1
+series=1 records_per_second=14112452.023
+outlined-append-2
+series=1 records_per_second=6951912.116
+inline-append-2
+series=1 records_per_second=10704393.230
+outlined-append-3
+series=1 records_per_second=6505438.587
+inline-append-3
+series=1 records_per_second=9270159.920
+outlined-append-4
+series=1 records_per_second=10867215.076
+inline-append-4
+series=1 records_per_second=14051528.817
+outlined-append-5
+series=1 records_per_second=12750620.751
+inline-append-5
+series=1 records_per_second=9832617.707

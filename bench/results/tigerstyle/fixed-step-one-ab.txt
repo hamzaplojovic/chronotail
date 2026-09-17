@@ -1,0 +1,20 @@
+divide-1
+width=1 queries=3000000 queries_per_second=20453650.654 points_per_second=20453650.654
+step1-1
+width=1 queries=3000000 queries_per_second=21347432.126 points_per_second=21347432.126
+divide-2
+width=1 queries=3000000 queries_per_second=21485014.249 points_per_second=21485014.249
+step1-2
+width=1 queries=3000000 queries_per_second=22111032.392 points_per_second=22111032.392
+divide-3
+width=1 queries=3000000 queries_per_second=20938650.675 points_per_second=20938650.675
+step1-3
+width=1 queries=3000000 queries_per_second=23024821.978 points_per_second=23024821.978
+divide-4
+width=1 queries=3000000 queries_per_second=21530553.201 points_per_second=21530553.201
+step1-4
+width=1 queries=3000000 queries_per_second=22991735.866 points_per_second=22991735.866
+divide-5
+width=1 queries=3000000 queries_per_second=23812177.544 points_per_second=23812177.544
+step1-5
+width=1 queries=3000000 queries_per_second=23788747.925 points_per_second=23788747.925

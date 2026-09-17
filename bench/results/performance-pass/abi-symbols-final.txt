@@ -1,0 +1,10 @@
+.release/macos-aarch64/chronotail/lib/libchronotail.dylib: Mach-O 64-bit dynamically linked shared library arm64
+0000000000000650 T _ct_abi_version
+0000000000000664 T _ct_error_string
+0000000000002124 T _ct_open_writer
+00000000000038a0 T _ct_append
+0000000000004d74 T _ct_checkpoint
+0000000000004f78 T _ct_open_reader
+00000000000054c0 T _ct_refresh
+0000000000005e9c T _ct_range
+0000000000006c14 T _ct_close

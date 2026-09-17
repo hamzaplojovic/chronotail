@@ -1,0 +1,36 @@
+old-1-64
+batch=64 records_per_second=33693857.610
+new-1-64
+batch=64 records_per_second=37236227.963
+old-1-512
+batch=512 records_per_second=32807681.336
+new-1-512
+batch=512 records_per_second=33874808.025
+old-1-4096
+batch=4096 records_per_second=31537790.519
+new-1-4096
+batch=4096 records_per_second=30172932.390
+old-2-64
+batch=64 records_per_second=28197323.959
+new-2-64
+batch=64 records_per_second=27336511.431
+old-2-512
+batch=512 records_per_second=34271408.382
+new-2-512
+batch=512 records_per_second=36248246.070
+old-2-4096
+batch=4096 records_per_second=33803940.525
+new-2-4096
+batch=4096 records_per_second=25608429.656
+old-3-64
+batch=64 records_per_second=34866409.353
+new-3-64
+batch=64 records_per_second=37798335.125
+old-3-512
+batch=512 records_per_second=35241116.086
+new-3-512
+batch=512 records_per_second=37203874.644
+old-3-4096
+batch=4096 records_per_second=33057159.170
+new-3-4096
+batch=4096 records_per_second=35062785.844

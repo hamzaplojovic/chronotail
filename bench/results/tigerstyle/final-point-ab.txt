@@ -1,0 +1,20 @@
+pre-point-1
+width=1 queries=3000000 queries_per_second=3608644.687 points_per_second=3608644.687
+tiger-point-1
+width=1 queries=3000000 queries_per_second=15808287.627 points_per_second=15808287.627
+pre-point-2
+width=1 queries=3000000 queries_per_second=2660875.320 points_per_second=2660875.320
+tiger-point-2
+width=1 queries=3000000 queries_per_second=20889770.676 points_per_second=20889770.676
+pre-point-3
+width=1 queries=3000000 queries_per_second=3693134.955 points_per_second=3693134.955
+tiger-point-3
+width=1 queries=3000000 queries_per_second=19344344.964 points_per_second=19344344.964
+pre-point-4
+width=1 queries=3000000 queries_per_second=3514170.769 points_per_second=3514170.769
+tiger-point-4
+width=1 queries=3000000 queries_per_second=18991198.187 points_per_second=18991198.187
+pre-point-5
+width=1 queries=3000000 queries_per_second=3550006.677 points_per_second=3550006.677
+tiger-point-5
+width=1 queries=3000000 queries_per_second=14648216.990 points_per_second=14648216.990

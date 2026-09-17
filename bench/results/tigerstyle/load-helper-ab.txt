@@ -1,0 +1,12 @@
+pre-refactor-1
+width=1 queries=3000000 queries_per_second=22731168.884 points_per_second=22731168.884
+refactor-1
+width=1 queries=3000000 queries_per_second=23559022.222 points_per_second=23559022.222
+pre-refactor-2
+width=1 queries=3000000 queries_per_second=20690362.640 points_per_second=20690362.640
+refactor-2
+width=1 queries=3000000 queries_per_second=21637521.730 points_per_second=21637521.730
+pre-refactor-3
+width=1 queries=3000000 queries_per_second=26198861.885 points_per_second=26198861.885
+refactor-3
+width=1 queries=3000000 queries_per_second=21321020.889 points_per_second=21321020.889

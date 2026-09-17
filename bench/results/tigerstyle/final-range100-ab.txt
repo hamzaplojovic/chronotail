@@ -1,0 +1,12 @@
+pre-range-1
+width=100 queries=1000000 queries_per_second=1339063.857 points_per_second=133906385.711
+tiger-range-1
+width=100 queries=1000000 queries_per_second=2920097.378 points_per_second=292009737.836
+pre-range-2
+width=100 queries=1000000 queries_per_second=1349901.575 points_per_second=134990157.530
+tiger-range-2
+width=100 queries=1000000 queries_per_second=3340043.581 points_per_second=334004358.109
+pre-range-3
+width=100 queries=1000000 queries_per_second=1173500.080 points_per_second=117350007.987
+tiger-range-3
+width=100 queries=1000000 queries_per_second=2712110.486 points_per_second=271211048.622

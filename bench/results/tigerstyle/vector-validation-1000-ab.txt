@@ -1,0 +1,20 @@
+scalar-1
+batch=1000 records_per_second=23393475.033
+vector-1
+batch=1000 records_per_second=28440254.641
+scalar-2
+batch=1000 records_per_second=28743537.317
+vector-2
+batch=1000 records_per_second=26282103.978
+scalar-3
+batch=1000 records_per_second=24366053.641
+vector-3
+batch=1000 records_per_second=24362266.869
+scalar-4
+batch=1000 records_per_second=26188339.577
+vector-4
+batch=1000 records_per_second=27737692.959
+scalar-5
+batch=1000 records_per_second=27900669.843
+vector-5
+batch=1000 records_per_second=27670854.292

@@ -1,0 +1,20 @@
+u128-1
+width=1 queries=3000000 queries_per_second=18060724.635 points_per_second=18060724.635
+u64-1
+width=1 queries=3000000 queries_per_second=17239224.407 points_per_second=17239224.407
+u128-2
+width=1 queries=3000000 queries_per_second=15417426.831 points_per_second=15417426.831
+u64-2
+width=1 queries=3000000 queries_per_second=15763643.461 points_per_second=15763643.461
+u128-3
+width=1 queries=3000000 queries_per_second=16869340.832 points_per_second=16869340.832
+u64-3
+width=1 queries=3000000 queries_per_second=21347742.167 points_per_second=21347742.167
+u128-4
+width=1 queries=3000000 queries_per_second=17943111.401 points_per_second=17943111.401
+u64-4
+width=1 queries=3000000 queries_per_second=20292242.107 points_per_second=20292242.107
+u128-5
+width=1 queries=3000000 queries_per_second=18279224.291 points_per_second=18279224.291
+u64-5
+width=1 queries=3000000 queries_per_second=21447548.679 points_per_second=21447548.679

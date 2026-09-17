@@ -1,0 +1,24 @@
+old-1
+batch=1 records_per_second=21529170.337
+new-1
+batch=1 records_per_second=22836420.437
+old-8
+batch=8 records_per_second=24911845.759
+new-8
+batch=8 records_per_second=29718881.727
+old-64
+batch=64 records_per_second=35902914.885
+new-64
+batch=64 records_per_second=37639188.637
+old-512
+batch=512 records_per_second=28732570.431
+new-512
+batch=512 records_per_second=26131021.422
+old-4096
+batch=4096 records_per_second=27357863.077
+new-4096
+batch=4096 records_per_second=21997102.216
+old-65536
+batch=65536 records_per_second=31411844.621
+new-65536
+batch=65536 records_per_second=32766737.248

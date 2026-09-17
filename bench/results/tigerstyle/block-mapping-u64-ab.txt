@@ -1,0 +1,20 @@
+binary-1
+width=1 queries=3000000 queries_per_second=16577581.415 points_per_second=16577581.415
+estimated-1
+width=1 queries=3000000 queries_per_second=27186985.206 points_per_second=27186985.206
+binary-2
+width=1 queries=3000000 queries_per_second=16113211.423 points_per_second=16113211.423
+estimated-2
+width=1 queries=3000000 queries_per_second=29470513.018 points_per_second=29470513.018
+binary-3
+width=1 queries=3000000 queries_per_second=20394000.672 points_per_second=20394000.672
+estimated-3
+width=1 queries=3000000 queries_per_second=27455880.711 points_per_second=27455880.711
+binary-4
+width=1 queries=3000000 queries_per_second=20559780.034 points_per_second=20559780.034
+estimated-4
+width=1 queries=3000000 queries_per_second=29833874.841 points_per_second=29833874.841
+binary-5
+width=1 queries=3000000 queries_per_second=20149069.533 points_per_second=20149069.533
+estimated-5
+width=1 queries=3000000 queries_per_second=28432863.583 points_per_second=28432863.583
