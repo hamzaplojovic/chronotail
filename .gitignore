@@ -22,4 +22,5 @@ bench/competitive/build/
 bench/competitive/vendor/
 bench/competitive/work/
 bench/competitive/__pycache__/
+tests/performance/results/
 *.egg-info/

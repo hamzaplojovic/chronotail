@@ -1,5 +1,10 @@
 # Chronotail mechanical model
 
+> Historical pre-redesign model for v1/format v6. Its bottlenecks motivated the
+> [engine redesign](../plans/2026-09-17-engine-redesign.md); statements describing
+> the “current architecture” below intentionally describe the older format-v6
+> engine and are not claims about current Chronotail.
+
 Status: pre-architecture model. No engine changes were made while deriving it.
 
 ## Machine and conservative ceilings

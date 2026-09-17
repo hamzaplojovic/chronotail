@@ -1,5 +1,10 @@
 # TigerStyle engineering report
 
+> Immutable final-v1/format-v6 evidence. “Current” and “final” below refer to
+> the v1 engine. See the
+> [engine redesign](../../../docs/plans/2026-09-17-engine-redesign.md) for the successor
+> architecture.
+
 ## Scope and result
 
 This pass audited Chronotail from the file format upward, in the required order: safety, performance, then developer experience. Format v6, C ABI v1, the public Zig/Python APIs, CLI behavior, checksums, recovery, snapshot semantics, and durability primitives are unchanged.

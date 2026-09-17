@@ -4,9 +4,9 @@ import ctypes
 import os
 import sys
 from pathlib import Path
-from typing import Iterable
+from typing import Iterable, NamedTuple
 
-ABI_VERSION = 1
+ABI_VERSION = 2
 CT_OK = 0
 CT_BUFFER_TOO_SMALL = 1
 
@@ -34,6 +34,26 @@ _handle = ctypes.c_void_p
 _i64_p = ctypes.POINTER(ctypes.c_int64)
 _f64_p = ctypes.POINTER(ctypes.c_double)
 
+
+class Aggregate(NamedTuple):
+    count: int
+    minimum: float
+    maximum: float
+    sum: float
+    first: float
+    last: float
+
+
+class _CAggregate(ctypes.Structure):
+    _fields_ = [
+        ("count", ctypes.c_uint64),
+        ("minimum", ctypes.c_double),
+        ("maximum", ctypes.c_double),
+        ("sum", ctypes.c_double),
+        ("first", ctypes.c_double),
+        ("last", ctypes.c_double),
+    ]
+
 _lib.ct_abi_version.restype = ctypes.c_uint32
 _lib.ct_error_string.argtypes = [ctypes.c_int]
 _lib.ct_error_string.restype = ctypes.c_char_p
@@ -41,6 +61,13 @@ _lib.ct_open_writer.argtypes = [ctypes.c_char_p, ctypes.c_size_t, ctypes.c_uint8
 _lib.ct_open_writer.restype = ctypes.c_int
 _lib.ct_append.argtypes = [_handle, ctypes.c_char_p, ctypes.c_size_t, _i64_p, _f64_p, ctypes.c_size_t]
 _lib.ct_append.restype = ctypes.c_int
+_lib.ct_prepare_append.argtypes = [
+    _handle,
+    ctypes.c_char_p,
+    ctypes.c_size_t,
+    ctypes.c_size_t,
+]
+_lib.ct_prepare_append.restype = ctypes.c_int
 _lib.ct_checkpoint.argtypes = [_handle, ctypes.c_uint8]
 _lib.ct_checkpoint.restype = ctypes.c_int
 _lib.ct_open_reader.argtypes = [ctypes.c_char_p, ctypes.c_size_t, ctypes.POINTER(_handle)]
@@ -59,6 +86,15 @@ _lib.ct_range.argtypes = [
     ctypes.POINTER(ctypes.c_size_t),
 ]
 _lib.ct_range.restype = ctypes.c_int
+_lib.ct_aggregate.argtypes = [
+    _handle,
+    ctypes.c_char_p,
+    ctypes.c_size_t,
+    ctypes.c_int64,
+    ctypes.c_int64,
+    ctypes.POINTER(_CAggregate),
+]
+_lib.ct_aggregate.restype = ctypes.c_int
 _lib.ct_close.argtypes = [_handle]
 _lib.ct_close.restype = ctypes.c_int
 
@@ -134,6 +170,19 @@ class Writer:
     def checkpoint(self, fsync: bool = False) -> None:
         self._flush()
         _check(_lib.ct_checkpoint(self._handle, int(fsync)))
+
+    def prepare(self, series: str, maximum_points_before_checkpoint: int) -> None:
+        if maximum_points_before_checkpoint < 1:
+            raise ValueError("maximum_points_before_checkpoint must be positive")
+        series_bytes = series.encode("utf-8")
+        _check(
+            _lib.ct_prepare_append(
+                self._handle,
+                series_bytes,
+                len(series_bytes),
+                maximum_points_before_checkpoint,
+            )
+        )
 
     def close(self) -> None:
         if not self._handle:
@@ -251,6 +300,28 @@ class Reader:
                 continue
             _check(code)
             return [(timestamps[i], values[i]) for i in range(count.value)]
+
+    def aggregate(self, series: str, start: int, end: int) -> Aggregate:
+        series_bytes = series.encode("utf-8")
+        result = _CAggregate()
+        _check(
+            _lib.ct_aggregate(
+                self._handle,
+                series_bytes,
+                len(series_bytes),
+                start,
+                end,
+                ctypes.byref(result),
+            )
+        )
+        return Aggregate(
+            result.count,
+            result.minimum,
+            result.maximum,
+            result.sum,
+            result.first,
+            result.last,
+        )
 
     def close(self) -> None:
         if self._handle:

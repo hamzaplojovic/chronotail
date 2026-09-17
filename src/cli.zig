@@ -28,6 +28,17 @@ pub fn main() !void {
             args[2],
         ) catch |err| return verificationFailed(err);
         try printInspection(report);
+    } else if (std.mem.eql(u8, command, "migrate-v6")) {
+        if (args.len != 4 and args.len != 5) return usage();
+        const codec: chronotail.Codec = if (args.len == 4)
+            .compressed
+        else if (std.mem.eql(u8, args[4], "raw"))
+            .raw
+        else if (std.mem.eql(u8, args[4], "compressed"))
+            .compressed
+        else
+            return error.InvalidCodec;
+        try chronotail.migrateV6(allocator, args[2], args[3], codec, .disk);
     } else {
         return usage();
     }
@@ -115,7 +126,8 @@ fn usage() error{InvalidArguments} {
         "usage: chronotail append  <file.ctdb> <series> <timestamp> <value> [raw|compressed]\n" ++
             "       chronotail range   <file.ctdb> <series> <start> <end>\n" ++
             "       chronotail verify  <file.ctdb>\n" ++
-            "       chronotail inspect <file.ctdb>\n",
+            "       chronotail inspect <file.ctdb>\n" ++
+            "       chronotail migrate-v6 <source.ctdb> <target.ctdb> [raw|compressed]\n",
         .{},
     );
     return error.InvalidArguments;

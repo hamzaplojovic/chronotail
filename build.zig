@@ -47,6 +47,18 @@ pub fn build(b: *std.Build) void {
     const test_step = b.step("test", "Run Chronotail tests");
     test_step.dependOn(&run_tests.step);
 
+    const performance = b.addExecutable(.{
+        .name = "chronotail-performance",
+        .root_module = module(b, "tests/performance/main.zig", target, optimize, core),
+    });
+    const run_performance = b.addRunArtifact(performance);
+    if (b.args) |args| run_performance.addArgs(args);
+    const performance_step = b.step(
+        "performance",
+        "Run internal performance profiling matrix",
+    );
+    performance_step.dependOn(&run_performance.step);
+
     addBenchmark(b, "bench-append", "bench/engine.zig", target, optimize, core);
     addBenchmark(b, "bench-checkpoint", "bench/checkpoint.zig", target, optimize, core);
     addBenchmark(b, "bench-concurrency", "bench/concurrency.zig", target, optimize, core);

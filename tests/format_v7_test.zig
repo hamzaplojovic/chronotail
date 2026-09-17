@@ -1,10 +1,10 @@
 const std = @import("std");
 const chronotail = @import("chronotail");
 
-test "format v6 constants are frozen" {
-    try std.testing.expectEqualSlices(u8, "CTDB\x06", &chronotail.file_header);
+test "format v7 constants are explicit" {
+    try std.testing.expectEqualSlices(u8, "CTDB\x07", &chronotail.file_header);
     try std.testing.expectEqual(@as(usize, 64 * 1024), chronotail.block_size);
-    try std.testing.expectEqual(@as(usize, 48), chronotail.block_header_size);
+    try std.testing.expectEqual(@as(usize, 128), chronotail.block_header_size);
     try std.testing.expectEqual(@as(usize, 16), chronotail.record_size);
 }
 
