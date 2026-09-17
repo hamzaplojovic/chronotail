@@ -54,6 +54,7 @@ def chart(
         )
     svg = f'''<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}"
  viewBox="0 0 {width} {height}" role="img" aria-label="{html.escape(title)}">
+<rect width="100%" height="100%" rx="8" fill="#ffffff"/>
 <style>
  text {{ font-family: ui-sans-serif, system-ui, sans-serif; fill: #172033; }}
  .title {{ font-size: 22px; font-weight: 700; }}

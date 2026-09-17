@@ -41,7 +41,7 @@ def ratios(workload):
 
 def svg_bar(name,title,items,unit):
     W,H=900,100+55*len(items);mx=max(v for _,v in items) or 1
-    parts=[f'<svg xmlns="http://www.w3.org/2000/svg" width="{W}" height="{H}" viewBox="0 0 {W} {H}">','<style>text{font-family:system-ui,sans-serif;font-size:14px}.title{font-size:20px;font-weight:600}.value{font-weight:600}</style>',f'<text class="title" x="20" y="30">{title}</text>']
+    parts=[f'<svg xmlns="http://www.w3.org/2000/svg" width="{W}" height="{H}" viewBox="0 0 {W} {H}">','<rect width="100%" height="100%" rx="8" fill="#ffffff"/>','<style>text{font-family:system-ui,sans-serif;font-size:14px}.title{font-size:20px;font-weight:600}.value{font-weight:600}</style>',f'<text class="title" x="20" y="30">{title}</text>']
     colors={"chronotail":"#2563eb","nanots":"#ea580c","sqlite":"#16a34a"}
     for i,(label,v) in enumerate(items):
       y=60+i*55;eng=next((x for x in colors if x in label.lower()),"");width=620*v/mx
