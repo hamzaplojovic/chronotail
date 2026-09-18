@@ -54,6 +54,7 @@ class _CAggregate(ctypes.Structure):
         ("last", ctypes.c_double),
     ]
 
+
 _lib.ct_abi_version.restype = ctypes.c_uint32
 _lib.ct_error_string.argtypes = [ctypes.c_int]
 _lib.ct_error_string.restype = ctypes.c_char_p
@@ -234,6 +235,8 @@ class Writer:
             or timestamp_view.format not in ("q", "l")
             or value_view.format != "d"
             or len(timestamp_view) != len(value_view)
+            or not timestamp_view.c_contiguous
+            or not value_view.c_contiguous
             or timestamp_view.readonly
             or value_view.readonly
         ):

@@ -166,20 +166,15 @@ func (r *Reader) Range(series string, start, end int64) ([]Point, error) {
 	if err != nil || required == 0 {
 		return nil, err
 	}
-	timestamps := make([]int64, required)
-	values := make([]float64, required)
-	actual, err := r.RangeInto(series, start, end, timestamps, values)
+	points := make([]Point, required)
+	actual, err := rangePointsNative(r.handle, series, start, end, points)
 	if err != nil {
 		return nil, err
 	}
 	if actual > required {
 		return nil, fmt.Errorf("chronotail: snapshot range grew unexpectedly")
 	}
-	points := make([]Point, actual)
-	for index := range points {
-		points[index] = Point{Timestamp: timestamps[index], Value: values[index]}
-	}
-	return points, nil
+	return points[:actual], nil
 }
 
 // RangeInto copies the available prefix into equal-length caller buffers and
@@ -234,9 +229,13 @@ func (r *Reader) Cursor(series string, start, end int64) (*Cursor, error) {
 	if series == "" {
 		return nil, ErrEmptySeries
 	}
-	native, err := cursorInitNative(r.handle, series, start, end)
+	native, err := cursorStateCreateNative(r.handle, series, start, end)
 	if err != nil {
 		return nil, err
+	}
+	if end < start {
+		cursorStateDestroyNative(native)
+		return &Cursor{reader: r, epoch: r.epoch, complete: true}, nil
 	}
 	return &Cursor{reader: r, epoch: r.epoch, native: native}, nil
 }
@@ -273,17 +272,15 @@ func (s *Series) Range(start, end int64) ([]Point, error) {
 	if err != nil || required == 0 {
 		return nil, err
 	}
-	timestamps := make([]int64, required)
-	values := make([]float64, required)
-	actual, err := s.RangeInto(start, end, timestamps, values)
+	points := make([]Point, required)
+	actual, err := rangePreparedPointsNative(s.reader.handle, s.handle, start, end, points)
 	if err != nil {
 		return nil, err
 	}
-	points := make([]Point, actual)
-	for index := range points {
-		points[index] = Point{Timestamp: timestamps[index], Value: values[index]}
+	if actual > required {
+		return nil, fmt.Errorf("chronotail: snapshot range grew unexpectedly")
 	}
-	return points, nil
+	return points[:actual], nil
 }
 
 // RangeInto is the caller-buffer form of Series.Range.
@@ -329,16 +326,21 @@ func (s *Series) ready() error {
 
 // Cursor advances through a range using caller-owned fixed-size buffers.
 type Cursor struct {
-	reader *Reader
-	epoch  uint64
-	native nativeCursor
+	reader   *Reader
+	epoch    uint64
+	native   nativeCursorState
+	complete bool
 }
 
 // NextInto copies the next chunk and returns its size and whether iteration is
 // complete. Buffers must have equal, positive lengths.
 func (c *Cursor) NextInto(timestamps []int64, values []float64) (count int, complete bool, err error) {
 	if err := c.ready(); err != nil {
+		c.release()
 		return 0, false, err
+	}
+	if c.complete {
+		return 0, true, nil
 	}
 	if len(timestamps) != len(values) {
 		return 0, false, ErrMismatchedLengths
@@ -346,13 +348,39 @@ func (c *Cursor) NextInto(timestamps []int64, values []float64) (count int, comp
 	if len(timestamps) == 0 {
 		return 0, false, ErrInvalidCapacity
 	}
-	count, err = cursorNextNative(c.reader.handle, &c.native, timestamps, values)
-	return count, cursorComplete(&c.native), err
+	count, complete, err = cursorStateNextNative(
+		c.reader.handle,
+		&c.native,
+		timestamps,
+		values,
+	)
+	if err == nil {
+		c.complete = complete
+	}
+	return count, complete, err
 }
 
 // Complete reports whether the cursor has exhausted its range.
 func (c *Cursor) Complete() bool {
-	return c == nil || cursorComplete(&c.native)
+	return c == nil || c.complete
+}
+
+// Close releases native traversal state when iteration is abandoned. Reaching
+// the end through NextInto releases it automatically. Close is idempotent.
+func (c *Cursor) Close() {
+	if c == nil {
+		return
+	}
+	c.release()
+	c.complete = true
+}
+
+func (c *Cursor) release() {
+	if c == nil || c.native == nil {
+		return
+	}
+	cursorStateDestroyNative(c.native)
+	c.native = nil
 }
 
 func (c *Cursor) ready() error {
@@ -364,6 +392,9 @@ func (c *Cursor) ready() error {
 	}
 	if c.epoch != c.reader.epoch {
 		return ErrStaleSeries
+	}
+	if c.native == nil && !c.complete {
+		return ErrClosed
 	}
 	return nil
 }

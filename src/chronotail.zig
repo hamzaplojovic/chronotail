@@ -17,6 +17,7 @@ pub const Reader = engine.Reader;
 pub const QueryProfile = engine.QueryProfile;
 pub const VerificationReport = engine.VerificationReport;
 pub const SeriesHandle = engine.SeriesHandle;
+pub const Point = engine.Point;
 pub const Aggregate = engine.Aggregate;
 pub const BorrowedRawPage = engine.BorrowedRawPage;
 pub const RangeCursor = engine.Reader.Cursor;

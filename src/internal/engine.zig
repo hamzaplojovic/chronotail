@@ -27,6 +27,7 @@ pub const QueryProfile = struct {
 };
 
 pub const SeriesHandle = struct { index: u32, generation: u64 };
+pub const Point = page.Point;
 
 pub const BorrowedRawPage = struct {
     timestamps: []const i64,
@@ -45,6 +46,7 @@ pub const Aggregate = struct {
 };
 
 const SeriesDirectory = std.StringHashMapUnmanaged(u32);
+const page_write_batch_max = 4;
 
 const LoadedSnapshot = struct {
     root: format.Root,
@@ -62,14 +64,17 @@ const RootCandidate = struct {
 };
 
 fn validateControl(file: anytype, physical_size: u64) ![format.control_size]u8 {
-    if (physical_size >= format.file_header.len) {
+    if (physical_size < format.file_header.len) return error.InvalidDatabase;
+    if (physical_size < format.control_size) {
         var found: [format.file_header.len]u8 = undefined;
         if (try file.preadAll(&found, 0) != found.len) return error.InvalidDatabase;
         if (std.mem.eql(u8, &found, "CTDB\x06")) return error.FormatV6RequiresMigration;
+        return error.InvalidDatabase;
     }
-    if (physical_size < format.control_size) return error.InvalidDatabase;
     var control: [format.control_size]u8 = undefined;
     if (try file.preadAll(&control, 0) != control.len) return error.InvalidDatabase;
+    if (std.mem.eql(u8, control[0..format.file_header.len], "CTDB\x06"))
+        return error.FormatV6RequiresMigration;
     format.validateFileHeader(&control) catch return error.InvalidDatabase;
     return control;
 }
@@ -144,7 +149,7 @@ fn loadManifestForRoot(
 ) !manifest.Manifest {
     const size = std.math.cast(usize, candidate.root.manifest.size) orelse
         return error.InvalidDatabase;
-    if (size > 256 * 1024 * 1024) return error.InvalidDatabase;
+    if (size > manifest.size_max) return error.InvalidDatabase;
     const bytes = try allocator.alloc(u8, size);
     defer allocator.free(bytes);
     if (try file.preadAll(bytes, candidate.root.manifest.offset) != bytes.len)
@@ -171,26 +176,34 @@ fn loadSnapshot(
     const control = try validateControl(file, physical_size);
     var candidates = collectRoots(&control, physical_size);
     if (newestRoot(&candidates) == null and rootSlotsEmpty(&control)) return null;
+    return @as(?LoadedSnapshot, try loadSnapshotFromCandidates(allocator, file, &candidates));
+}
+
+fn loadSnapshotFromCandidates(
+    allocator: std.mem.Allocator,
+    file: anytype,
+    candidates: *[format.root_slot_count]?RootCandidate,
+) !LoadedSnapshot {
     var attempts: usize = 0;
     while (attempts < format.root_slot_count) : (attempts += 1) {
         var best_slot: ?usize = null;
-        for (candidates, 0..) |candidate, slot| if (candidate) |value| {
+        for (candidates.*, 0..) |candidate, slot| if (candidate) |value| {
             if (best_slot == null or
-                value.root.generation > candidates[best_slot.?].?.root.generation)
+                value.root.generation > candidates.*[best_slot.?].?.root.generation)
             {
                 best_slot = slot;
             }
         };
         const slot = best_slot orelse return error.InvalidDatabase;
-        const candidate = candidates[slot].?;
-        if (!rootHasValidPredecessor(&candidates, candidate)) {
-            candidates[slot] = null;
+        const candidate = candidates.*[slot].?;
+        if (!rootHasValidPredecessor(candidates, candidate)) {
+            candidates.*[slot] = null;
             continue;
         }
         const catalog = loadManifestForRoot(allocator, file, candidate) catch |err| switch (err) {
             error.OutOfMemory => return err,
             else => {
-                candidates[slot] = null;
+                candidates.*[slot] = null;
                 continue;
             },
         };
@@ -209,8 +222,9 @@ fn buildSeriesDirectory(allocator: std.mem.Allocator, series: []const manifest.S
     errdefer directory.deinit(allocator);
     try directory.ensureUnusedCapacity(allocator, @intCast(series.len));
     for (series, 0..) |entry, series_index| {
-        if (directory.contains(entry.name)) return error.InvalidDatabase;
-        directory.putAssumeCapacityNoClobber(entry.name, @intCast(series_index));
+        const slot = directory.getOrPutAssumeCapacity(entry.name);
+        if (slot.found_existing) return error.InvalidDatabase;
+        slot.value_ptr.* = @intCast(series_index);
     }
     return directory;
 }
@@ -224,6 +238,11 @@ fn summaryEqual(a: index.Summary, b: index.Summary) bool {
         @as(u64, @bitCast(a.value_sum)) == @as(u64, @bitCast(b.value_sum)) and
         @as(u64, @bitCast(a.value_first)) == @as(u64, @bitCast(b.value_first)) and
         @as(u64, @bitCast(a.value_last)) == @as(u64, @bitCast(b.value_last));
+}
+
+fn pointerEqual(a: format.Pointer, b: format.Pointer) bool {
+    return a.offset == b.offset and a.size == b.size and a.kind == b.kind and
+        std.mem.eql(u8, &a.identity, &b.identity);
 }
 
 fn minimum(a: f64, b: f64) f64 {
@@ -247,9 +266,12 @@ const WriterSeries = struct {
     candidate_summary: ?index.Summary = null,
     timestamps: []i64,
     values: []f64,
+    owned_buffer: []u64 = &.{},
     pending_count: usize = 0,
     pending_entries: std.ArrayList(index.Entry) = .empty,
+    right_spine: std.ArrayList(index.Node) = .empty,
     last_timestamp: ?i64 = null,
+    dirty: bool = false,
 
     fn init(
         allocator: std.mem.Allocator,
@@ -258,11 +280,12 @@ const WriterSeries = struct {
         root: ?format.Pointer,
         summary: ?index.Summary,
     ) !WriterSeries {
-        const owned_name = try allocator.dupe(u8, name);
-        errdefer allocator.free(owned_name);
-        const timestamps = try allocator.alloc(i64, page.records_max);
-        errdefer allocator.free(timestamps);
-        const values = try allocator.alloc(f64, page.records_max);
+        const name_words = std.math.divCeil(usize, name.len, @sizeOf(u64)) catch unreachable;
+        const buffer = try allocator.alloc(u64, name_words + page.records_max * 2);
+        const owned_name = std.mem.sliceAsBytes(buffer)[0..name.len];
+        @memcpy(owned_name, name);
+        const timestamps = @as([*]i64, @ptrCast(buffer.ptr + name_words))[0..page.records_max];
+        const values = @as([*]f64, @ptrCast(buffer.ptr + name_words + page.records_max))[0..page.records_max];
         return .{
             .id = id,
             .name = owned_name,
@@ -270,15 +293,55 @@ const WriterSeries = struct {
             .summary = summary,
             .timestamps = timestamps,
             .values = values,
+            .owned_buffer = buffer,
             .last_timestamp = if (summary) |value| value.timestamp_max else null,
         };
     }
 
+    fn initBorrowed(
+        id: u32,
+        name: []u8,
+        root: format.Pointer,
+        summary: index.Summary,
+        timestamps: []i64,
+        values: []f64,
+    ) WriterSeries {
+        return .{
+            .id = id,
+            .name = name,
+            .root = root,
+            .summary = summary,
+            .timestamps = timestamps,
+            .values = values,
+            .last_timestamp = summary.timestamp_max,
+        };
+    }
+
     fn deinit(self: *WriterSeries, allocator: std.mem.Allocator) void {
-        allocator.free(self.name);
-        allocator.free(self.timestamps);
-        allocator.free(self.values);
+        if (self.owned_buffer.len > 0) allocator.free(self.owned_buffer);
         self.pending_entries.deinit(allocator);
+        self.right_spine.deinit(allocator);
+    }
+};
+
+const WriterManifestIterator = struct {
+    series: []WriterSeries,
+    index: usize = 0,
+
+    pub fn next(self: *WriterManifestIterator) ?manifest.Series {
+        while (self.index < self.series.len) {
+            const entry = &self.series[self.index];
+            self.index += 1;
+            const root = entry.candidate_root orelse entry.root orelse continue;
+            const summary = entry.candidate_summary orelse entry.summary orelse continue;
+            return .{
+                .id = entry.id,
+                .name = entry.name,
+                .root = root,
+                .summary = summary,
+            };
+        }
+        return null;
     }
 };
 
@@ -290,11 +353,20 @@ pub fn AppenderFor(comptime File: type) type {
         file: File,
         series: std.ArrayList(WriterSeries) = .empty,
         series_directory: SeriesDirectory = .empty,
+        dirty_series: std.ArrayList(u32) = .empty,
         manifest_scratch: std.ArrayList(u8) = .empty,
-        manifest_series_scratch: std.ArrayList(manifest.Series) = .empty,
+        page_write_scratch: std.ArrayList(u8) = .empty,
+        loaded_names: []u8 = &.{},
+        loaded_timestamps: []i64 = &.{},
+        loaded_values: []f64 = &.{},
+        last_series_index: ?u32 = null,
         write_offset: u64,
+        committed_size: u64 = format.control_size,
         generation: u64 = 0,
         previous_root_identity: checksum.Identity = checksum.zero,
+        manifest_size: usize = manifest.header_size,
+        catalog_manifest_size: usize = manifest.header_size,
+        manifest_series_count: usize = 0,
         codec: Codec,
         dirty: bool = false,
         poisoned: bool = false,
@@ -358,6 +430,7 @@ pub fn AppenderFor(comptime File: type) type {
             root.encode(&encoded_root);
             try self.file.pwriteAll(&encoded_root, try format.rootSlotOffset(0));
             self.generation = root.generation;
+            self.committed_size = root.committed_size;
             self.previous_root_identity = format.Root.identity(&encoded_root);
             return self;
         }
@@ -376,28 +449,51 @@ pub fn AppenderFor(comptime File: type) type {
             errdefer self.deinitMemory();
             if (loaded) |*snapshot| {
                 defer snapshot.deinit(allocator);
-                try self.series.ensureTotalCapacity(allocator, snapshot.catalog.series.items.len);
+                const series_count = snapshot.catalog.series.items.len;
+                try self.series.ensureTotalCapacity(allocator, series_count);
                 try self.series_directory.ensureUnusedCapacity(
                     allocator,
-                    @intCast(snapshot.catalog.series.items.len),
+                    @intCast(series_count),
                 );
-                for (snapshot.catalog.series.items) |entry| {
-                    const writer_series = try WriterSeries.init(
-                        allocator,
+                try self.dirty_series.ensureTotalCapacity(allocator, series_count);
+                const buffered_points = std.math.mul(
+                    usize,
+                    series_count,
+                    page.records_max,
+                ) catch return error.DatabaseTooLarge;
+                if (buffered_points > 0) {
+                    self.loaded_timestamps = try allocator.alloc(i64, buffered_points);
+                    self.loaded_values = try allocator.alloc(f64, buffered_points);
+                }
+                self.loaded_names = snapshot.catalog.names;
+                snapshot.catalog.names = &.{};
+                for (snapshot.catalog.series.items, 0..) |entry, loaded_index| {
+                    const buffer_start = loaded_index * page.records_max;
+                    const writer_series = WriterSeries.initBorrowed(
                         entry.id,
                         entry.name,
                         entry.root,
                         entry.summary,
+                        self.loaded_timestamps[buffer_start..][0..page.records_max],
+                        self.loaded_values[buffer_start..][0..page.records_max],
                     );
                     self.series.appendAssumeCapacity(writer_series);
                     const series_index = self.series.items.len - 1;
-                    self.series_directory.putAssumeCapacityNoClobber(
+                    const slot = self.series_directory.getOrPutAssumeCapacity(
                         self.series.items[series_index].name,
-                        @intCast(series_index),
                     );
+                    if (slot.found_existing) return error.InvalidDatabase;
+                    slot.value_ptr.* = @intCast(series_index);
                 }
                 self.generation = snapshot.root.generation;
+                self.committed_size = snapshot.root.committed_size;
                 self.previous_root_identity = snapshot.root_identity;
+                self.manifest_size = std.math.cast(
+                    usize,
+                    snapshot.root.manifest.size,
+                ) orelse return error.DatabaseTooLarge;
+                self.catalog_manifest_size = self.manifest_size;
+                self.manifest_series_count = series_count;
             }
             return self;
         }
@@ -426,6 +522,8 @@ pub fn AppenderFor(comptime File: type) type {
             const pages = std.math.divCeil(usize, total, page.records_max) catch
                 return error.DatabaseTooLarge;
             try entry.pending_entries.ensureUnusedCapacity(self.allocator, pages);
+            if (comptime File == std.fs.File) if (pages > 1)
+                try self.ensurePageWriteScratch(@min(pages, page_write_batch_max));
         }
 
         pub fn appendBatch(
@@ -446,14 +544,41 @@ pub fn AppenderFor(comptime File: type) type {
                 if (timestamps[0] <= last) return error.TimestampNotIncreasing;
             };
 
-            const target = existing orelse try self.getOrCreateSeries(name);
+            const target = existing orelse try self.createSeries(name);
+            self.markDirty(target);
             errdefer self.poisoned = true;
             var consumed: usize = 0;
             while (consumed < timestamps.len) {
                 if (target.pending_count == page.records_max) try self.flushSeries(target);
+                const remaining = timestamps.len - consumed;
+                if (comptime File == std.fs.File) {
+                    const full_pages = @min(
+                        remaining / page.records_max,
+                        page_write_batch_max,
+                    );
+                    if (target.pending_count == 0 and full_pages > 1) {
+                        const point_count = full_pages * page.records_max;
+                        try self.writeFullPages(
+                            target,
+                            timestamps[consumed..][0..point_count],
+                            values[consumed..][0..point_count],
+                        );
+                        consumed += point_count;
+                        continue;
+                    }
+                }
+                if (target.pending_count == 0 and remaining >= page.records_max) {
+                    try self.writePage(
+                        target,
+                        timestamps[consumed..][0..page.records_max],
+                        values[consumed..][0..page.records_max],
+                    );
+                    consumed += page.records_max;
+                    continue;
+                }
                 const amount = @min(
                     page.records_max - target.pending_count,
-                    timestamps.len - consumed,
+                    remaining,
                 );
                 @memcpy(
                     target.timestamps[target.pending_count..][0..amount],
@@ -481,46 +606,85 @@ pub fn AppenderFor(comptime File: type) type {
                 return;
             }
             errdefer self.poisoned = true;
-            for (self.series.items) |*entry| try self.flushSeries(entry);
+            for (self.dirty_series.items) |series_index|
+                try self.flushSeries(&self.series.items[series_index]);
 
-            self.manifest_series_scratch.clearRetainingCapacity();
-            try self.manifest_series_scratch.ensureTotalCapacity(
-                self.allocator,
-                self.series.items.len,
-            );
-            for (self.series.items) |*entry| {
-                if (entry.pending_entries.items.len > 0) {
-                    entry.candidate_root = try index.append(
-                        self.file,
-                        self.allocator,
-                        &self.write_offset,
-                        entry.id,
-                        entry.root,
-                        entry.pending_entries.items,
+            var written_spine: [index.height_max]index.Node = undefined;
+            for (self.dirty_series.items) |series_index| {
+                const entry = &self.series.items[series_index];
+                var cached_spine: ?[]const index.Node = null;
+                var output_spine: []index.Node = &written_spine;
+                var output_in_place = false;
+                var expected_spine_depth: ?usize = null;
+                if (comptime File == std.fs.File) if (entry.right_spine.items.len > 0) {
+                    const required_depth = try index.appendedSpineDepth(
+                        entry.right_spine.items,
+                        entry.pending_entries.items.len,
                     );
-                    entry.candidate_summary = try readIndexSummary(
-                        self.file,
-                        entry.candidate_root.?,
-                    );
-                } else {
-                    entry.candidate_root = entry.root;
-                    entry.candidate_summary = entry.summary;
+                    try entry.right_spine.ensureTotalCapacity(self.allocator, required_depth);
+                    cached_spine = entry.right_spine.items;
+                    output_spine = entry.right_spine.items.ptr[0..entry.right_spine.capacity];
+                    output_in_place = true;
+                    expected_spine_depth = required_depth;
+                };
+                const appended = try index.appendWithSpine(
+                    self.file,
+                    self.allocator,
+                    &self.write_offset,
+                    self.committed_size,
+                    entry.id,
+                    if (entry.root) |pointer| .{
+                        .pointer = pointer,
+                        .summary = entry.summary orelse return error.InvalidDatabase,
+                    } else null,
+                    cached_spine,
+                    entry.pending_entries.items,
+                    output_spine,
+                );
+                if (expected_spine_depth) |expected|
+                    std.debug.assert(appended.spine_depth == expected);
+                if (comptime File == std.fs.File) {
+                    if (output_in_place) {
+                        entry.right_spine.items.len = appended.spine_depth;
+                    } else {
+                        entry.right_spine.clearRetainingCapacity();
+                        try entry.right_spine.appendSlice(
+                            self.allocator,
+                            written_spine[0..appended.spine_depth],
+                        );
+                    }
                 }
-                self.manifest_series_scratch.appendAssumeCapacity(.{
-                    .id = entry.id,
-                    .name = entry.name,
-                    .root = entry.candidate_root orelse return error.InvalidDatabase,
-                    .summary = entry.candidate_summary orelse return error.InvalidDatabase,
-                });
+                entry.candidate_root = appended.root.pointer;
+                entry.candidate_summary = appended.root.summary;
+                if (entry.root == null) {
+                    const published_series_size = std.math.add(
+                        usize,
+                        manifest.series_fixed_size,
+                        entry.name.len,
+                    ) catch return error.ManifestTooLarge;
+                    self.manifest_size = std.math.add(
+                        usize,
+                        self.manifest_size,
+                        published_series_size,
+                    ) catch return error.ManifestTooLarge;
+                    self.manifest_series_count = std.math.add(
+                        usize,
+                        self.manifest_series_count,
+                        1,
+                    ) catch return error.ManifestTooLarge;
+                }
             }
 
             const next_generation = std.math.add(u64, self.generation, 1) catch
                 return error.DatabaseTooLarge;
-            var manifest_pointer = try manifest.encode(
+            var manifest_iterator = WriterManifestIterator{ .series = self.series.items };
+            var manifest_pointer = try manifest.encodeKnownIterator(
                 &self.manifest_scratch,
                 self.allocator,
                 next_generation,
-                self.manifest_series_scratch.items,
+                self.manifest_series_count,
+                self.manifest_size,
+                &manifest_iterator,
             );
             self.write_offset = std.mem.alignForward(u64, self.write_offset, 8);
             manifest_pointer.offset = self.write_offset;
@@ -545,14 +709,18 @@ pub fn AppenderFor(comptime File: type) type {
             if (durability == .disk) try self.file.sync();
 
             self.generation = next_generation;
+            self.committed_size = self.write_offset;
             self.previous_root_identity = format.Root.identity(&encoded_root);
-            for (self.series.items) |*entry| {
+            for (self.dirty_series.items) |series_index| {
+                const entry = &self.series.items[series_index];
                 entry.root = entry.candidate_root;
                 entry.summary = entry.candidate_summary;
                 entry.candidate_root = null;
                 entry.candidate_summary = null;
                 entry.pending_entries.clearRetainingCapacity();
+                entry.dirty = false;
             }
+            self.dirty_series.clearRetainingCapacity();
             self.dirty = false;
         }
 
@@ -570,12 +738,26 @@ pub fn AppenderFor(comptime File: type) type {
 
         fn flushSeries(self: *Self, entry: *WriterSeries) !void {
             if (entry.pending_count == 0) return;
+            try self.writePage(
+                entry,
+                entry.timestamps[0..entry.pending_count],
+                entry.values[0..entry.pending_count],
+            );
+            entry.pending_count = 0;
+        }
+
+        fn writePage(
+            self: *Self,
+            entry: *WriterSeries,
+            timestamps: []const i64,
+            values: []const f64,
+        ) !void {
             var encoded_bytes: [format.page_size]u8 = undefined;
             const encoded = try page.encodeWithOptions(
                 &encoded_bytes,
                 entry.id,
-                entry.timestamps[0..entry.pending_count],
-                entry.values[0..entry.pending_count],
+                timestamps,
+                values,
                 self.codec == .compressed,
             );
             try entry.pending_entries.ensureUnusedCapacity(self.allocator, 1);
@@ -593,15 +775,94 @@ pub fn AppenderFor(comptime File: type) type {
             ));
             self.write_offset = std.math.add(u64, self.write_offset, encoded.bytes.len) catch
                 return error.DatabaseTooLarge;
-            entry.pending_count = 0;
+        }
+
+        fn writeFullPages(
+            self: *Self,
+            entry: *WriterSeries,
+            timestamps: []const i64,
+            values: []const f64,
+        ) !void {
+            std.debug.assert(comptime File == std.fs.File);
+            std.debug.assert(timestamps.len == values.len);
+            std.debug.assert(timestamps.len % page.records_max == 0);
+            const page_count = timestamps.len / page.records_max;
+            std.debug.assert(page_count > 1 and page_count <= page_write_batch_max);
+            try entry.pending_entries.ensureUnusedCapacity(self.allocator, page_count);
+
+            try self.ensurePageWriteScratch(page_count);
+            const staging = self.page_write_scratch.items;
+            var entries: [page_write_batch_max]index.Entry = undefined;
+            const base_offset = std.mem.alignForward(u64, self.write_offset, 8);
+            var encoded_size: usize = 0;
+            for (0..page_count) |page_index| {
+                const aligned_size = std.mem.alignForward(usize, encoded_size, 8);
+                @memset(staging[encoded_size..aligned_size], 0);
+                encoded_size = aligned_size;
+                const output: *[format.page_size]u8 =
+                    @ptrCast(staging[encoded_size..][0..format.page_size].ptr);
+                const point_offset = page_index * page.records_max;
+                const encoded = try page.encodeWithOptions(
+                    output,
+                    entry.id,
+                    timestamps[point_offset..][0..page.records_max],
+                    values[point_offset..][0..page.records_max],
+                    self.codec == .compressed,
+                );
+                const pointer_offset = std.math.add(u64, base_offset, encoded_size) catch
+                    return error.DatabaseTooLarge;
+                entries[page_index] = try index.dataEntry(.{
+                    .offset = pointer_offset,
+                    .size = @intCast(encoded.bytes.len),
+                    .kind = .data,
+                    .identity = encoded.identity,
+                }, encoded.statistics);
+                encoded_size += encoded.bytes.len;
+            }
+            try self.file.pwriteAll(staging[0..encoded_size], base_offset);
+            entry.pending_entries.appendSliceAssumeCapacity(entries[0..page_count]);
+            self.write_offset = std.math.add(u64, base_offset, encoded_size) catch
+                return error.DatabaseTooLarge;
+        }
+
+        fn ensurePageWriteScratch(self: *Self, page_count: usize) !void {
+            std.debug.assert(page_count > 1 and page_count <= page_write_batch_max);
+            const required_size = page_count * format.page_size;
+            if (self.page_write_scratch.items.len < required_size) {
+                try self.page_write_scratch.resize(
+                    self.allocator,
+                    required_size,
+                );
+            }
         }
 
         fn getOrCreateSeries(self: *Self, name: []const u8) !*WriterSeries {
             if (self.findSeries(name)) |entry| return entry;
+            return self.createSeries(name);
+        }
+
+        fn createSeries(self: *Self, name: []const u8) !*WriterSeries {
             if (self.series.items.len == std.math.maxInt(u32))
                 return error.DatabaseTooLarge;
             try self.series.ensureUnusedCapacity(self.allocator, 1);
             try self.series_directory.ensureUnusedCapacity(self.allocator, 1);
+            // Every prepared series may become dirty before the next checkpoint.
+            // Reserve by catalog size, not by the current dirty-list length.
+            try self.dirty_series.ensureTotalCapacity(
+                self.allocator,
+                self.series.items.len + 1,
+            );
+            const added_manifest_size = std.math.add(
+                usize,
+                manifest.series_fixed_size,
+                name.len,
+            ) catch return error.ManifestTooLarge;
+            const next_manifest_size = std.math.add(
+                usize,
+                self.catalog_manifest_size,
+                added_manifest_size,
+            ) catch return error.ManifestTooLarge;
+            if (next_manifest_size > manifest.size_max) return error.ManifestTooLarge;
             const id: u32 = if (self.series.items.len == 0)
                 0
             else
@@ -614,11 +875,27 @@ pub fn AppenderFor(comptime File: type) type {
                 self.series.items[series_index].name,
                 @intCast(series_index),
             );
+            self.last_series_index = @intCast(series_index);
+            self.catalog_manifest_size = next_manifest_size;
             return &self.series.items[series_index];
         }
 
+        fn markDirty(self: *Self, entry: *WriterSeries) void {
+            if (entry.dirty) return;
+            const series_index = (@intFromPtr(entry) - @intFromPtr(self.series.items.ptr)) /
+                @sizeOf(WriterSeries);
+            std.debug.assert(series_index < self.series.items.len);
+            self.dirty_series.appendAssumeCapacity(@intCast(series_index));
+            entry.dirty = true;
+        }
+
         fn findSeries(self: *Self, name: []const u8) ?*WriterSeries {
+            if (self.last_series_index) |series_index| {
+                const cached = &self.series.items[series_index];
+                if (std.mem.eql(u8, cached.name, name)) return cached;
+            }
             const series_index = self.series_directory.get(name) orelse return null;
+            self.last_series_index = series_index;
             return &self.series.items[series_index];
         }
 
@@ -626,23 +903,17 @@ pub fn AppenderFor(comptime File: type) type {
             for (self.series.items) |*entry| entry.deinit(self.allocator);
             self.series.deinit(self.allocator);
             self.series_directory.deinit(self.allocator);
+            self.dirty_series.deinit(self.allocator);
             self.manifest_scratch.deinit(self.allocator);
-            self.manifest_series_scratch.deinit(self.allocator);
+            self.page_write_scratch.deinit(self.allocator);
+            if (self.loaded_names.len > 0) self.allocator.free(self.loaded_names);
+            if (self.loaded_timestamps.len > 0) self.allocator.free(self.loaded_timestamps);
+            if (self.loaded_values.len > 0) self.allocator.free(self.loaded_values);
         }
     };
 }
 
 pub const Appender = AppenderFor(std.fs.File);
-
-fn readIndexSummary(file: anytype, pointer: format.Pointer) !index.Summary {
-    var bytes: [format.index_node_size]u8 = undefined;
-    if (try file.preadAll(&bytes, pointer.offset) != bytes.len) return error.InvalidDatabase;
-    const node = index.decode(&bytes, pointer, try file.getEndPos()) catch |err| switch (err) {
-        error.ChecksumMismatch => return err,
-        else => return error.InvalidDatabase,
-    };
-    return node.summary;
-}
 
 const VerificationCacheEntry = struct {
     offset: u64 = 0,
@@ -657,9 +928,35 @@ const verification_cache_ways = 8;
 const TraversalFrame = struct { node: index.Node, next: u16 = 0 };
 const MappedTraversalFrame = struct { view: index.View, next: u16 = 0 };
 const RangeBuffers = struct { timestamps: []i64, values: []f64 };
+const FileSink = struct {
+    file: std.fs.File,
+    bytes: [64 * 1024]u8 = undefined,
+    used: usize = 0,
+
+    fn writePoint(self: *FileSink, timestamp: i64, value: f64) !void {
+        // Decimal formatting may spell subnormal f64 values with more than a
+        // thousand fractional digits; 2 KiB bounds every finite value plus
+        // the timestamp, separator, sign, and newline.
+        var line: [2 * 1024]u8 = undefined;
+        const encoded = try std.fmt.bufPrint(&line, "{d} {d}\n", .{ timestamp, value });
+        if (encoded.len > self.bytes.len - self.used) try self.flush();
+        @memcpy(self.bytes[self.used..][0..encoded.len], encoded);
+        self.used += encoded.len;
+    }
+
+    fn flush(self: *FileSink) !void {
+        if (self.used == 0) return;
+        try self.file.writeAll(self.bytes[0..self.used]);
+        self.used = 0;
+    }
+};
+const RangeMode = enum { count, buffers, points, file, profile };
+const CachedPage = struct { pointer: format.Pointer, view: page.View };
 const SeriesRuntime = struct {
     root: ?index.View = null,
+    active_leaf: ?index.View = null,
     single_page: ?index.Entry = null,
+    active_page: ?CachedPage = null,
 };
 
 pub fn ReaderFor(comptime File: type) type {
@@ -682,6 +979,7 @@ pub fn ReaderFor(comptime File: type) type {
         allocator: std.mem.Allocator,
         file: File,
         series: std.ArrayList(manifest.Series) = .empty,
+        series_names: []u8 = &.{},
         series_runtime: std.ArrayList(SeriesRuntime) = .empty,
         series_directory: SeriesDirectory = .empty,
         generation: u64 = 0,
@@ -715,6 +1013,8 @@ pub fn ReaderFor(comptime File: type) type {
             if (loaded) |*snapshot| {
                 self.series = snapshot.catalog.series;
                 snapshot.catalog.series = .empty;
+                self.series_names = snapshot.catalog.names;
+                snapshot.catalog.names = &.{};
                 defer snapshot.deinit(allocator);
                 self.series_directory = try buildSeriesDirectory(allocator, self.series.items);
                 self.generation = snapshot.root.generation;
@@ -731,18 +1031,24 @@ pub fn ReaderFor(comptime File: type) type {
 
         pub fn refresh(self: *Self) !bool {
             const physical_size = try self.file.getEndPos();
-            if (physical_size == self.observed_file_size) return false;
+            // A writer publishes a checkpoint by overwriting a root slot after
+            // appending its immutable objects. If this reader opened in that
+            // interval, publication changes no file size, so trailing bytes
+            // require rechecking the control region until a root adopts them.
+            if (physical_size == self.observed_file_size and
+                self.observed_file_size == self.committed_size) return false;
             const control = try validateControl(self.file, physical_size);
-            const candidates = collectRoots(&control, physical_size);
+            var candidates = collectRoots(&control, physical_size);
             const newest = newestRoot(&candidates);
             if (newest == null or newest.?.root.generation <= self.generation) {
                 return false;
             }
 
-            var loaded = (try loadSnapshot(self.allocator, self.file, physical_size)) orelse {
-                self.observed_file_size = physical_size;
-                return false;
-            };
+            var loaded = try loadSnapshotFromCandidates(
+                self.allocator,
+                self.file,
+                &candidates,
+            );
             defer loaded.deinit(self.allocator);
             if (loaded.root.generation <= self.generation) {
                 self.observed_file_size = physical_size;
@@ -760,11 +1066,13 @@ pub fn ReaderFor(comptime File: type) type {
 
             self.unmap();
             self.series_directory.deinit(self.allocator);
-            for (self.series.items) |entry| entry.deinit(self.allocator);
             self.series.deinit(self.allocator);
+            if (self.series_names.len > 0) self.allocator.free(self.series_names);
             self.series_runtime.deinit(self.allocator);
             self.series = loaded.catalog.series;
             loaded.catalog.series = .empty;
+            self.series_names = loaded.catalog.names;
+            loaded.catalog.names = &.{};
             self.series_directory = directory;
             self.series_runtime = runtime;
             self.generation = loaded.root.generation;
@@ -782,21 +1090,14 @@ pub fn ReaderFor(comptime File: type) type {
         }
 
         pub fn latestTimestamp(self: *Self, name: []const u8) !?i64 {
-            const entry = self.findSeries(name) orelse return error.SeriesNotFound;
+            const handle = try self.prepare(name);
+            const entry = try self.resolve(handle);
+            try self.verifySeriesRoot(handle.index, entry);
             return entry.summary.timestamp_max;
         }
 
         pub fn codecCounts(self: *Self, name: []const u8) ![2]usize {
-            const handle = try self.prepare(name);
-            var counts = [_]usize{ 0, 0 };
-            try self.walkPages(handle, struct {
-                fn visit(reader: *Self, pointer: format.Pointer, _: index.Summary, state: *[2]usize) !void {
-                    var scratch: [format.page_size]u8 = undefined;
-                    const view = try reader.loadPage(pointer, &scratch);
-                    state[if (view.timestamp_codec == .raw and view.value_codec == .raw) 0 else 1] += 1;
-                }
-            }.visit, &counts);
-            return counts;
+            return self.countCodecs(try self.prepare(name));
         }
 
         pub fn range(
@@ -807,7 +1108,13 @@ pub fn ReaderFor(comptime File: type) type {
             output: ?std.fs.File,
         ) !usize {
             const handle = try self.prepare(name);
-            return self.rangePreparedInternal(handle, start, end, output, null, null);
+            if (output) |file| {
+                var sink = FileSink{ .file = file };
+                const count = try self.rangePreparedInternal(handle, start, end, .file, &sink);
+                try sink.flush();
+                return count;
+            }
+            return self.rangePreparedInternal(handle, start, end, .count, {});
         }
 
         pub fn rangeInto(
@@ -831,8 +1138,32 @@ pub fn ReaderFor(comptime File: type) type {
             values: []f64,
         ) !usize {
             if (timestamps.len != values.len) return error.InvalidBatch;
+            if (timestamps.len == 0)
+                return self.rangePreparedInternal(handle, start, end, .count, {});
             var buffers = RangeBuffers{ .timestamps = timestamps, .values = values };
-            return self.rangePreparedInternal(handle, start, end, null, &buffers, null);
+            return self.rangePreparedInternal(handle, start, end, .buffers, &buffers);
+        }
+
+        pub fn rangePoints(
+            self: *Self,
+            name: []const u8,
+            start: i64,
+            end: i64,
+            points: []Point,
+        ) !usize {
+            return self.rangePreparedPoints(try self.prepare(name), start, end, points);
+        }
+
+        pub fn rangePreparedPoints(
+            self: *Self,
+            handle: SeriesHandle,
+            start: i64,
+            end: i64,
+            points: []Point,
+        ) !usize {
+            if (points.len == 0)
+                return self.rangePreparedInternal(handle, start, end, .count, {});
+            return self.rangePreparedInternal(handle, start, end, .points, points);
         }
 
         pub fn cursor(self: *Self, name: []const u8, start: i64, end: i64) !Cursor {
@@ -862,10 +1193,10 @@ pub fn ReaderFor(comptime File: type) type {
         ) !usize {
             if (timestamps.len != values.len or timestamps.len == 0)
                 return error.InvalidBatch;
-            _ = try self.resolve(cursor_state.series);
+            const series_entry = try self.resolve(cursor_state.series);
             if (cursor_state.complete) return 0;
             if (comptime File == std.fs.File) if (self.mapping != null) {
-                return self.cursorNextMapped(cursor_state, timestamps, values);
+                return self.cursorNextMapped(series_entry, cursor_state, timestamps, values);
             };
             const found = try self.rangePreparedInto(
                 cursor_state.series,
@@ -890,21 +1221,14 @@ pub fn ReaderFor(comptime File: type) type {
 
         fn cursorNextMapped(
             self: *Self,
+            series_entry: *const manifest.Series,
             cursor_state: *Cursor,
             timestamps: []i64,
             values: []f64,
         ) !usize {
-            const series_entry = try self.resolve(cursor_state.series);
+            const runtime = &self.series_runtime.items[cursor_state.series.index];
             if (!cursor_state.initialized) {
-                const runtime = &self.series_runtime.items[cursor_state.series.index];
-                const root = runtime.root orelse blk: {
-                    const loaded = try self.loadMappedIndex(series_entry.root);
-                    runtime.root = loaded;
-                    break :blk loaded;
-                };
-                if (root.series_id != series_entry.id or
-                    !summaryEqual(root.summary, series_entry.summary))
-                    return error.InvalidDatabase;
+                const root = try self.loadSeriesRoot(runtime, series_entry);
                 cursor_state.frames[0] = .{
                     .view = root,
                     .next = root.lowerBound(cursor_state.next_timestamp),
@@ -914,7 +1238,6 @@ pub fn ReaderFor(comptime File: type) type {
             }
 
             var copied: usize = 0;
-            var page_scratch: [format.page_size]u8 = undefined;
             while (copied < timestamps.len) {
                 if (cursor_state.current_page) |page_view| {
                     var point_index: usize = cursor_state.point_index;
@@ -973,6 +1296,7 @@ pub fn ReaderFor(comptime File: type) type {
                         child.level + 1 != frame.view.level or
                         !summaryEqual(child.summary, entry.summary))
                         return error.InvalidDatabase;
+                    if (child.level == 0) runtime.active_leaf = child;
                     cursor_state.frames[cursor_state.depth] = .{
                         .view = child,
                         .next = child.lowerBound(cursor_state.next_timestamp),
@@ -981,10 +1305,7 @@ pub fn ReaderFor(comptime File: type) type {
                     continue;
                 }
 
-                const page_view = try self.loadPage(entry.pointer, &page_scratch);
-                if (page_view.series_id != series_entry.id or
-                    !summaryEqual(index.Summary.fromPage(page_view.statistics), entry.summary))
-                    return error.InvalidDatabase;
+                const page_view = try self.loadSeriesPage(runtime, series_entry.id, entry);
                 const point_index = page_view.lowerBound(cursor_state.next_timestamp);
                 if (point_index == page_view.statistics.count) continue;
                 cursor_state.current_page = page_view;
@@ -1002,10 +1323,9 @@ pub fn ReaderFor(comptime File: type) type {
             if (@import("builtin").cpu.arch.endian() != .little)
                 return error.BorrowedViewUnavailable;
             const series_entry = try self.resolve(handle);
-            const pointer = try self.findMappedPage(series_entry, handle.index, timestamp);
-            var scratch: [format.page_size]u8 = undefined;
-            const view = try self.loadPage(pointer, &scratch);
-            if (view.series_id != series_entry.id) return error.InvalidDatabase;
+            const entry = try self.findMappedPage(series_entry, handle.index, timestamp);
+            const runtime = &self.series_runtime.items[handle.index];
+            const view = try self.loadSeriesPage(runtime, series_entry.id, entry);
             if (timestamp < view.statistics.timestamp_min or
                 timestamp > view.statistics.timestamp_max) return error.TimestampNotFound;
             const timestamps = view.rawTimestamps() orelse return error.PageNotRaw;
@@ -1021,7 +1341,7 @@ pub fn ReaderFor(comptime File: type) type {
         pub fn profileRange(self: *Self, name: []const u8, start: i64, end: i64) !QueryProfile {
             var profile = QueryProfile{};
             const handle = try self.prepare(name);
-            _ = try self.rangePreparedInternal(handle, start, end, null, null, &profile);
+            _ = try self.rangePreparedInternal(handle, start, end, .profile, &profile);
             return profile;
         }
 
@@ -1041,12 +1361,18 @@ pub fn ReaderFor(comptime File: type) type {
             if (start <= series_entry.summary.timestamp_min and
                 end >= series_entry.summary.timestamp_max)
             {
+                try self.verifySeriesRoot(handle.index, series_entry);
                 mergeAggregateSummary(&result, series_entry.summary);
                 return result;
             }
+            if (comptime File == std.fs.File) if (self.mapping != null)
+                return self.aggregateMapped(handle.index, series_entry, start, end);
             var frames: [index.height_max]TraversalFrame = undefined;
             frames[0] = .{ .node = try self.loadNode(series_entry.root) };
-            if (frames[0].node.series_id != series_entry.id) return error.InvalidDatabase;
+            if (frames[0].node.series_id != series_entry.id or
+                !summaryEqual(frames[0].node.summary, series_entry.summary))
+                return error.InvalidDatabase;
+            frames[0].next = frames[0].node.lowerBound(start);
             var depth: usize = 1;
             var page_scratch: [format.page_size]u8 = undefined;
             while (depth > 0) {
@@ -1071,11 +1397,13 @@ pub fn ReaderFor(comptime File: type) type {
                     const child = try self.loadNode(entry.pointer);
                     if (child.series_id != series_entry.id or child.level + 1 != frame.node.level or
                         !summaryEqual(child.summary, entry.summary)) return error.InvalidDatabase;
-                    frames[depth] = .{ .node = child };
+                    frames[depth] = .{ .node = child, .next = child.lowerBound(start) };
                     depth += 1;
                 } else {
                     const view = try self.loadPage(entry.pointer, &page_scratch);
-                    if (view.series_id != series_entry.id) return error.InvalidDatabase;
+                    if (view.series_id != series_entry.id or
+                        !summaryEqual(index.Summary.fromPage(view.statistics), entry.summary))
+                        return error.InvalidDatabase;
                     var point_index = view.lowerBound(start);
                     if (point_index == view.statistics.count) continue;
                     var timestamp_cursor = view.timestampCursor(point_index);
@@ -1084,6 +1412,67 @@ pub fn ReaderFor(comptime File: type) type {
                         if (timestamp_cursor.next() > end) break;
                         mergeAggregateValue(&result, value_cursor.next());
                     }
+                }
+            }
+            return result;
+        }
+
+        fn aggregateMapped(
+            self: *Self,
+            series_index: u32,
+            series_entry: *const manifest.Series,
+            start: i64,
+            end: i64,
+        ) !Aggregate {
+            const runtime = &self.series_runtime.items[series_index];
+            const root = try self.loadSeriesRoot(runtime, series_entry);
+            const first = if (runtime.active_leaf) |leaf|
+                if (start >= leaf.summary.timestamp_min and end <= leaf.summary.timestamp_max)
+                    leaf
+                else
+                    root
+            else
+                root;
+            var frames: [index.height_max]MappedTraversalFrame = undefined;
+            frames[0] = .{ .view = first, .next = first.lowerBound(start) };
+            var depth: usize = 1;
+            var result = Aggregate{};
+            while (depth > 0) {
+                var frame = &frames[depth - 1];
+                if (frame.next >= frame.view.count) {
+                    depth -= 1;
+                    continue;
+                }
+                const entry = frame.view.entryAt(frame.next);
+                frame.next += 1;
+                if (entry.summary.timestamp_min > end) {
+                    frame.next = frame.view.count;
+                    continue;
+                }
+                if (entry.summary.timestamp_min >= start and entry.summary.timestamp_max <= end) {
+                    mergeAggregateSummary(&result, entry.summary);
+                    continue;
+                }
+                if (frame.view.level > 0) {
+                    if (depth == frames.len) return error.InvalidDatabase;
+                    const child = try self.loadMappedIndex(entry.pointer);
+                    if (child.series_id != series_entry.id or
+                        child.level + 1 != frame.view.level or
+                        !summaryEqual(child.summary, entry.summary))
+                        return error.InvalidDatabase;
+                    if (child.level == 0) runtime.active_leaf = child;
+                    frames[depth] = .{ .view = child, .next = child.lowerBound(start) };
+                    depth += 1;
+                    continue;
+                }
+                const view = try self.loadSeriesPage(runtime, series_entry.id, entry);
+                var point_index = view.lowerBound(start);
+                if (point_index == view.statistics.count) continue;
+                var timestamp_cursor = view.timestampCursor(point_index);
+                var value_cursor = view.valueCursor(point_index);
+                while (point_index < view.statistics.count) : (point_index += 1) {
+                    if (timestamp_cursor.next() > end) break;
+                    mergeAggregateValue(&result, value_cursor.next());
                 }
             }
             return result;
@@ -1114,7 +1503,7 @@ pub fn ReaderFor(comptime File: type) type {
             resolution: u64,
             output: []Aggregate,
         ) !usize {
-            _ = try self.resolve(handle);
+            const series_entry = try self.resolve(handle);
             if (resolution == 0) return error.InvalidArguments;
             if (end < start) return 0;
             const span: u128 = @intCast(@as(i128, end) - start);
@@ -1136,12 +1525,12 @@ pub fn ReaderFor(comptime File: type) type {
                 ));
             };
 
-            const series_entry = try self.resolve(handle);
             var frames: [index.height_max]TraversalFrame = undefined;
             frames[0] = .{ .node = try self.loadNode(series_entry.root) };
             if (frames[0].node.series_id != series_entry.id or
                 !summaryEqual(frames[0].node.summary, series_entry.summary))
                 return error.InvalidDatabase;
+            frames[0].next = frames[0].node.lowerBound(start);
             var depth: usize = 1;
             var page_scratch: [format.page_size]u8 = undefined;
             while (depth > 0) {
@@ -1182,7 +1571,7 @@ pub fn ReaderFor(comptime File: type) type {
                         child.level + 1 != frame.node.level or
                         !summaryEqual(child.summary, entry.summary))
                         return error.InvalidDatabase;
-                    frames[depth] = .{ .node = child };
+                    frames[depth] = .{ .node = child, .next = child.lowerBound(start) };
                     depth += 1;
                     continue;
                 }
@@ -1216,17 +1605,22 @@ pub fn ReaderFor(comptime File: type) type {
             handle: SeriesHandle,
             start: i64,
             end: i64,
-            output: ?std.fs.File,
-            buffers: ?*RangeBuffers,
-            profile: ?*QueryProfile,
+            comptime mode: RangeMode,
+            sink: switch (mode) {
+                .count => void,
+                .buffers => *RangeBuffers,
+                .points => []Point,
+                .file => *FileSink,
+                .profile => *QueryProfile,
+            },
         ) !usize {
             if (end < start) return 0;
             if (comptime File == std.fs.File) if (self.mapping != null) {
-                return self.rangeMapped(handle, start, end, output, buffers, profile);
+                return self.rangeMapped(handle, start, end, mode, sink);
             };
-            var timer = if (profile != null) try std.time.Timer.start() else null;
+            var timer = if (comptime mode == .profile) try std.time.Timer.start() else {};
             const series_entry = try self.resolve(handle);
-            if (timer) |*value| profile.?.block_lookup_ns += value.lap();
+            if (comptime mode == .profile) sink.block_lookup_ns += timer.lap();
             var frames: [index.height_max]TraversalFrame = undefined;
             frames[0] = .{ .node = try self.loadNode(series_entry.root) };
             if (frames[0].node.series_id != series_entry.id or
@@ -1234,6 +1628,14 @@ pub fn ReaderFor(comptime File: type) type {
             {
                 return error.InvalidDatabase;
             }
+            if (comptime mode == .count or mode == .profile) {
+                if (start <= series_entry.summary.timestamp_min and
+                    end >= series_entry.summary.timestamp_max)
+                {
+                    return @intCast(series_entry.summary.point_count);
+                }
+            }
+            frames[0].next = frames[0].node.lowerBound(start);
             var depth: usize = 1;
             var matches: usize = 0;
             var page_scratch: [format.page_size]u8 = undefined;
@@ -1250,44 +1652,65 @@ pub fn ReaderFor(comptime File: type) type {
                     frame.next = frame.node.count;
                     continue;
                 }
+                const summarize_covered = switch (mode) {
+                    .count, .profile => true,
+                    .buffers => matches >= sink.timestamps.len,
+                    .points => matches >= sink.len,
+                    .file => false,
+                };
+                if (summarize_covered and entry.summary.timestamp_min >= start and
+                    entry.summary.timestamp_max <= end)
+                {
+                    matches = std.math.add(
+                        usize,
+                        matches,
+                        @intCast(entry.summary.point_count),
+                    ) catch return error.DatabaseTooLarge;
+                    continue;
+                }
                 if (frame.node.level > 0) {
                     if (depth == frames.len) return error.InvalidDatabase;
                     const child = try self.loadNode(entry.pointer);
                     if (child.series_id != series_entry.id or child.level + 1 != frame.node.level or
                         !summaryEqual(child.summary, entry.summary)) return error.InvalidDatabase;
-                    frames[depth] = .{ .node = child };
+                    frames[depth] = .{ .node = child, .next = child.lowerBound(start) };
                     depth += 1;
                     continue;
                 }
-                if (output == null and buffers == null and
-                    entry.summary.timestamp_min >= start and entry.summary.timestamp_max <= end)
-                {
-                    matches = std.math.add(usize, matches, @intCast(entry.summary.point_count)) catch
-                        return error.DatabaseTooLarge;
-                    continue;
-                }
-                if (timer) |*value| value.reset();
+                if (comptime mode == .profile) timer.reset();
                 const view = try self.loadPage(entry.pointer, &page_scratch);
-                if (timer) |*value| profile.?.file_read_ns += value.lap();
+                if (comptime mode == .profile) sink.file_read_ns += timer.lap();
                 if (view.series_id != series_entry.id or
                     !summaryEqual(index.Summary.fromPage(view.statistics), entry.summary))
                 {
                     return error.InvalidDatabase;
                 }
-                if (output == null) {
-                    if (buffers) |destination| {
-                        const output_offset = @min(matches, destination.timestamps.len);
+                switch (mode) {
+                    .buffers => {
+                        const output_offset = @min(matches, sink.timestamps.len);
                         matches += try view.rangeInto(
                             start,
                             end,
-                            destination.timestamps[output_offset..],
-                            destination.values[output_offset..],
+                            sink.timestamps[output_offset..],
+                            sink.values[output_offset..],
                         );
-                    } else {
+                        continue;
+                    },
+                    .points => {
+                        const output_offset = @min(matches, sink.len);
+                        matches += try view.rangePoints(start, end, sink[output_offset..]);
+                        continue;
+                    },
+                    .count => {
                         matches += view.countRange(start, end);
-                    }
-                    if (timer) |*value| profile.?.record_decode_ns += value.lap();
-                    continue;
+                        continue;
+                    },
+                    .profile => {
+                        matches += view.countRange(start, end);
+                        sink.record_decode_ns += timer.lap();
+                        continue;
+                    },
+                    .file => {},
                 }
                 var point_index = view.lowerBound(start);
                 if (point_index == view.statistics.count) continue;
@@ -1297,14 +1720,9 @@ pub fn ReaderFor(comptime File: type) type {
                     const timestamp = timestamp_cursor.next();
                     if (timestamp > end) break;
                     const value = value_cursor.next();
-                    if (buffers) |destination| if (matches < destination.timestamps.len) {
-                        destination.timestamps[matches] = timestamp;
-                        destination.values[matches] = value;
-                    };
-                    if (output) |out| try writePoint(out, timestamp, value);
+                    try sink.writePoint(timestamp, value);
                     matches += 1;
                 }
-                if (timer) |*value| profile.?.record_decode_ns += value.lap();
             }
             return matches;
         }
@@ -1314,45 +1732,48 @@ pub fn ReaderFor(comptime File: type) type {
             handle: SeriesHandle,
             start: i64,
             end: i64,
-            output: ?std.fs.File,
-            buffers: ?*RangeBuffers,
-            profile: ?*QueryProfile,
+            comptime mode: RangeMode,
+            sink: switch (mode) {
+                .count => void,
+                .buffers => *RangeBuffers,
+                .points => []Point,
+                .file => *FileSink,
+                .profile => *QueryProfile,
+            },
         ) !usize {
-            var timer = if (profile != null) try std.time.Timer.start() else null;
+            var timer = if (comptime mode == .profile) try std.time.Timer.start() else {};
             const series_entry = try self.resolve(handle);
-            if (timer) |*value| profile.?.block_lookup_ns += value.lap();
+            if (comptime mode == .profile) sink.block_lookup_ns += timer.lap();
             var frames: [index.height_max]MappedTraversalFrame = undefined;
             const runtime = &self.series_runtime.items[handle.index];
-            const root = runtime.root orelse blk: {
-                const loaded = try self.loadMappedIndex(series_entry.root);
-                runtime.root = loaded;
-                if (loaded.level == 0 and loaded.count == 1)
-                    runtime.single_page = loaded.entryAt(0);
-                break :blk loaded;
-            };
-            if (root.series_id != series_entry.id or !summaryEqual(root.summary, series_entry.summary))
-                return error.InvalidDatabase;
+            const root = try self.loadSeriesRoot(runtime, series_entry);
+            if (comptime mode == .count or mode == .profile) {
+                if (start <= series_entry.summary.timestamp_min and
+                    end >= series_entry.summary.timestamp_max)
+                {
+                    return @intCast(series_entry.summary.point_count);
+                }
+            }
             if (runtime.single_page) |entry| {
                 if (entry.summary.timestamp_max < start or entry.summary.timestamp_min > end)
                     return 0;
-                if (output == null and buffers == null and
-                    entry.summary.timestamp_min >= start and entry.summary.timestamp_max <= end)
-                    return @intCast(entry.summary.point_count);
-                var page_scratch: [format.page_size]u8 = undefined;
-                const page_view = try self.loadPage(entry.pointer, &page_scratch);
-                if (page_view.series_id != series_entry.id or
-                    !summaryEqual(index.Summary.fromPage(page_view.statistics), entry.summary))
-                    return error.InvalidDatabase;
-                if (output == null) {
-                    if (buffers) |destination| {
-                        return page_view.rangeInto(
-                            start,
-                            end,
-                            destination.timestamps,
-                            destination.values,
-                        );
-                    }
-                    return page_view.countRange(start, end);
+                if (comptime mode == .count or mode == .profile) {
+                    if (entry.summary.timestamp_min >= start and
+                        entry.summary.timestamp_max <= end)
+                        return @intCast(entry.summary.point_count);
+                }
+                const page_view = try self.loadSeriesPage(runtime, series_entry.id, entry);
+                switch (mode) {
+                    .buffers => return page_view.rangeInto(
+                        start,
+                        end,
+                        sink.timestamps,
+                        sink.values,
+                    ),
+                    .points => return page_view.rangePoints(start, end, sink),
+                    .count => return page_view.countRange(start, end),
+                    .profile => return page_view.countRange(start, end),
+                    .file => {},
                 }
                 var point_index = page_view.lowerBound(start);
                 if (point_index == page_view.statistics.count) return 0;
@@ -1363,19 +1784,21 @@ pub fn ReaderFor(comptime File: type) type {
                     const timestamp = timestamp_cursor.next();
                     if (timestamp > end) break;
                     const value = value_cursor.next();
-                    if (buffers) |destination| if (single_matches < destination.timestamps.len) {
-                        destination.timestamps[single_matches] = timestamp;
-                        destination.values[single_matches] = value;
-                    };
-                    if (output) |out| try writePoint(out, timestamp, value);
+                    try sink.writePoint(timestamp, value);
                     single_matches += 1;
                 }
                 return single_matches;
             }
-            frames[0] = .{ .view = root, .next = root.lowerBound(start) };
+            const first = if (runtime.active_leaf) |leaf|
+                if (start >= leaf.summary.timestamp_min and end <= leaf.summary.timestamp_max)
+                    leaf
+                else
+                    root
+            else
+                root;
+            frames[0] = .{ .view = first, .next = first.lowerBound(start) };
             var depth: usize = 1;
             var matches: usize = 0;
-            var page_scratch: [format.page_size]u8 = undefined;
             while (depth > 0) {
                 var frame = &frames[depth - 1];
                 if (frame.next >= frame.view.count) {
@@ -1388,42 +1811,61 @@ pub fn ReaderFor(comptime File: type) type {
                     frame.next = frame.view.count;
                     continue;
                 }
+                const summarize_covered = switch (mode) {
+                    .count, .profile => true,
+                    .buffers => matches >= sink.timestamps.len,
+                    .points => matches >= sink.len,
+                    .file => false,
+                };
+                if (summarize_covered and entry.summary.timestamp_min >= start and
+                    entry.summary.timestamp_max <= end)
+                {
+                    matches = std.math.add(
+                        usize,
+                        matches,
+                        @intCast(entry.summary.point_count),
+                    ) catch return error.DatabaseTooLarge;
+                    continue;
+                }
                 if (frame.view.level > 0) {
                     if (depth == frames.len) return error.InvalidDatabase;
                     const child = try self.loadMappedIndex(entry.pointer);
                     if (child.series_id != series_entry.id or child.level + 1 != frame.view.level or
                         !summaryEqual(child.summary, entry.summary)) return error.InvalidDatabase;
+                    if (child.level == 0) runtime.active_leaf = child;
                     frames[depth] = .{ .view = child, .next = child.lowerBound(start) };
                     depth += 1;
                     continue;
                 }
-                if (output == null and buffers == null and
-                    entry.summary.timestamp_min >= start and entry.summary.timestamp_max <= end)
-                {
-                    matches = std.math.add(usize, matches, @intCast(entry.summary.point_count)) catch
-                        return error.DatabaseTooLarge;
-                    continue;
-                }
-                if (timer) |*value| value.reset();
-                const page_view = try self.loadPage(entry.pointer, &page_scratch);
-                if (timer) |*value| profile.?.file_read_ns += value.lap();
-                if (page_view.series_id != series_entry.id or
-                    !summaryEqual(index.Summary.fromPage(page_view.statistics), entry.summary))
-                    return error.InvalidDatabase;
-                if (output == null) {
-                    if (buffers) |destination| {
-                        const output_offset = @min(matches, destination.timestamps.len);
+                if (comptime mode == .profile) timer.reset();
+                const page_view = try self.loadSeriesPage(runtime, series_entry.id, entry);
+                if (comptime mode == .profile) sink.file_read_ns += timer.lap();
+                switch (mode) {
+                    .buffers => {
+                        const output_offset = @min(matches, sink.timestamps.len);
                         matches += try page_view.rangeInto(
                             start,
                             end,
-                            destination.timestamps[output_offset..],
-                            destination.values[output_offset..],
+                            sink.timestamps[output_offset..],
+                            sink.values[output_offset..],
                         );
-                    } else {
+                        continue;
+                    },
+                    .points => {
+                        const output_offset = @min(matches, sink.len);
+                        matches += try page_view.rangePoints(start, end, sink[output_offset..]);
+                        continue;
+                    },
+                    .count => {
                         matches += page_view.countRange(start, end);
-                    }
-                    if (timer) |*value| profile.?.record_decode_ns += value.lap();
-                    continue;
+                        continue;
+                    },
+                    .profile => {
+                        matches += page_view.countRange(start, end);
+                        sink.record_decode_ns += timer.lap();
+                        continue;
+                    },
+                    .file => {},
                 }
                 var point_index = page_view.lowerBound(start);
                 if (point_index == page_view.statistics.count) continue;
@@ -1433,14 +1875,9 @@ pub fn ReaderFor(comptime File: type) type {
                     const timestamp = timestamp_cursor.next();
                     if (timestamp > end) break;
                     const value = value_cursor.next();
-                    if (buffers) |destination| if (matches < destination.timestamps.len) {
-                        destination.timestamps[matches] = timestamp;
-                        destination.values[matches] = value;
-                    };
-                    if (output) |out| try writePoint(out, timestamp, value);
+                    try sink.writePoint(timestamp, value);
                     matches += 1;
                 }
-                if (timer) |*value| profile.?.record_decode_ns += value.lap();
             }
             return matches;
         }
@@ -1468,39 +1905,100 @@ pub fn ReaderFor(comptime File: type) type {
             return result;
         }
 
+        fn loadSeriesRoot(
+            self: *Self,
+            runtime: *SeriesRuntime,
+            series_entry: *const manifest.Series,
+        ) !index.View {
+            if (runtime.root) |root| return root;
+            const root = try self.loadMappedIndex(series_entry.root);
+            if (root.series_id != series_entry.id or
+                !summaryEqual(root.summary, series_entry.summary))
+                return error.InvalidDatabase;
+            runtime.root = root;
+            if (root.level == 0 and root.count == 1)
+                runtime.single_page = root.entryAt(0);
+            return root;
+        }
+
+        fn verifySeriesRoot(
+            self: *Self,
+            series_index: u32,
+            series_entry: *const manifest.Series,
+        ) !void {
+            if (comptime File == std.fs.File) if (self.mapping != null) {
+                const runtime = &self.series_runtime.items[series_index];
+                _ = try self.loadSeriesRoot(runtime, series_entry);
+                return;
+            };
+            const root = try self.loadNode(series_entry.root);
+            if (root.series_id != series_entry.id or
+                !summaryEqual(root.summary, series_entry.summary))
+                return error.InvalidDatabase;
+        }
+
+        fn loadSeriesPage(
+            self: *Self,
+            runtime: *SeriesRuntime,
+            series_id: u32,
+            entry: index.Entry,
+        ) !page.View {
+            if (comptime File != std.fs.File) unreachable;
+            if (runtime.active_page) |cached| {
+                if (pointerEqual(cached.pointer, entry.pointer)) return cached.view;
+            }
+            const view = try self.loadMappedPage(entry.pointer);
+            if (view.series_id != series_id or
+                !summaryEqual(index.Summary.fromPage(view.statistics), entry.summary))
+                return error.InvalidDatabase;
+            runtime.active_page = .{ .pointer = entry.pointer, .view = view };
+            return view;
+        }
+
         fn findMappedPage(
             self: *Self,
             series_entry: *const manifest.Series,
             series_index: u32,
             timestamp: i64,
-        ) !format.Pointer {
+        ) !index.Entry {
             if (comptime File != std.fs.File) return error.BorrowedViewUnavailable;
             if (self.mapping == null) return error.BorrowedViewUnavailable;
-            var node = self.series_runtime.items[series_index].root orelse blk: {
-                const root = try self.loadMappedIndex(series_entry.root);
-                self.series_runtime.items[series_index].root = root;
-                break :blk root;
-            };
+            const runtime = &self.series_runtime.items[series_index];
+            const root = try self.loadSeriesRoot(runtime, series_entry);
+            var node = if (runtime.active_leaf) |leaf|
+                if (timestamp >= leaf.summary.timestamp_min and
+                    timestamp <= leaf.summary.timestamp_max)
+                    leaf
+                else
+                    root
+            else
+                root;
             var depth: usize = 0;
             while (true) {
                 if (depth == index.height_max) return error.InvalidDatabase;
                 const entry_index = node.lowerBound(timestamp);
                 if (entry_index >= node.count) return error.TimestampNotFound;
                 const entry = node.entryAt(entry_index);
-                if (node.level == 0) return entry.pointer;
+                if (node.level == 0) return entry;
                 const child = try self.loadMappedIndex(entry.pointer);
                 if (child.series_id != series_entry.id or child.level + 1 != node.level or
                     !summaryEqual(child.summary, entry.summary)) return error.InvalidDatabase;
+                if (child.level == 0) runtime.active_leaf = child;
                 node = child;
                 depth += 1;
             }
         }
 
-        fn walkPages(self: *Self, handle: SeriesHandle, visitor: anytype, state: anytype) !void {
+        fn countCodecs(self: *Self, handle: SeriesHandle) ![2]usize {
             const series_entry = try self.resolve(handle);
+            var counts = [_]usize{ 0, 0 };
             var frames: [index.height_max]TraversalFrame = undefined;
             frames[0] = .{ .node = try self.loadNode(series_entry.root) };
+            if (frames[0].node.series_id != series_entry.id or
+                !summaryEqual(frames[0].node.summary, series_entry.summary))
+                return error.InvalidDatabase;
             var depth: usize = 1;
+            var page_scratch: [format.page_size]u8 = undefined;
             while (depth > 0) {
                 var frame = &frames[depth - 1];
                 if (frame.next >= frame.node.count) {
@@ -1510,16 +2008,28 @@ pub fn ReaderFor(comptime File: type) type {
                 const entry = frame.node.entries[frame.next];
                 frame.next += 1;
                 if (frame.node.level == 0) {
-                    try visitor(self, entry.pointer, entry.summary, state);
+                    const view = try self.loadPage(entry.pointer, &page_scratch);
+                    if (view.series_id != series_entry.id or
+                        !summaryEqual(index.Summary.fromPage(view.statistics), entry.summary))
+                        return error.InvalidDatabase;
+                    counts[
+                        if (view.timestamp_codec == .raw and view.value_codec == .raw)
+                            0
+                        else
+                            1
+                    ] += 1;
                 } else {
                     if (depth == frames.len) return error.InvalidDatabase;
                     const child = try self.loadNode(entry.pointer);
-                    if (child.series_id != series_entry.id or child.level + 1 != frame.node.level)
+                    if (child.series_id != series_entry.id or
+                        child.level + 1 != frame.node.level or
+                        !summaryEqual(child.summary, entry.summary))
                         return error.InvalidDatabase;
                     frames[depth] = .{ .node = child };
                     depth += 1;
                 }
             }
+            return counts;
         }
 
         fn loadNode(self: *Self, pointer: format.Pointer) !index.Node {
@@ -1563,23 +2073,41 @@ pub fn ReaderFor(comptime File: type) type {
             return node;
         }
 
+        fn loadMappedPage(self: *Self, pointer: format.Pointer) !page.View {
+            if (comptime File != std.fs.File) unreachable;
+            if (pointer.kind != .data or pointer.size > format.page_size or
+                pointer.size < format.page_header_size) return error.InvalidDatabase;
+            const mapped = self.mapping orelse return error.InvalidDatabase;
+            const offset = std.math.cast(usize, pointer.offset) orelse
+                return error.InvalidDatabase;
+            const end = std.math.add(usize, offset, pointer.size) catch
+                return error.InvalidDatabase;
+            if (end > mapped.len) return error.InvalidDatabase;
+            const bytes = mapped[offset..end];
+            const known = self.cacheContains(pointer);
+            const decoded = if (known)
+                page.decodeKnown(bytes, pointer.identity)
+            else
+                page.decode(bytes, pointer.identity);
+            const view = decoded catch |err| switch (err) {
+                error.ChecksumMismatch => return err,
+                else => return error.InvalidDatabase,
+            };
+            if (!known) self.cacheInsert(pointer);
+            return view;
+        }
+
         fn loadPage(
             self: *Self,
             pointer: format.Pointer,
             scratch: *[format.page_size]u8,
         ) !page.View {
+            if (comptime File == std.fs.File) if (self.mapping != null)
+                return self.loadMappedPage(pointer);
             if (pointer.kind != .data or pointer.size > format.page_size or
                 pointer.size < format.page_header_size) return error.InvalidDatabase;
             const size: usize = pointer.size;
             const bytes: []const u8 = if (comptime File == std.fs.File) blk: {
-                if (self.mapping) |mapped| {
-                    const offset = std.math.cast(usize, pointer.offset) orelse
-                        return error.InvalidDatabase;
-                    const end = std.math.add(usize, offset, size) catch
-                        return error.InvalidDatabase;
-                    if (end > mapped.len) return error.InvalidDatabase;
-                    break :blk mapped[offset..end];
-                }
                 if (try self.file.preadAll(scratch[0..size], pointer.offset) != size)
                     return error.InvalidDatabase;
                 break :blk scratch[0..size];
@@ -1617,7 +2145,7 @@ pub fn ReaderFor(comptime File: type) type {
                 const entry = self.verification_cache[(base + way) % verification_cache_size];
                 if (!entry.valid) return false;
                 if (entry.offset == pointer.offset and entry.size == pointer.size and
-                    entry.kind == pointer.kind and checksum.equal(entry.identity, pointer.identity))
+                    entry.kind == pointer.kind and std.mem.eql(u8, &entry.identity, &pointer.identity))
                 {
                     return true;
                 }
@@ -1650,11 +2178,6 @@ pub fn ReaderFor(comptime File: type) type {
             return &self.series.items[handle.index];
         }
 
-        fn findSeries(self: *Self, name: []const u8) ?*const manifest.Series {
-            const series_index = self.series_directory.get(name) orelse return null;
-            return &self.series.items[series_index];
-        }
-
         fn mapFile(file: File, size: u64) !Mapping {
             if (comptime File != std.fs.File) return {};
             const length = std.math.cast(usize, size) orelse return error.FileTooBig;
@@ -1676,8 +2199,8 @@ pub fn ReaderFor(comptime File: type) type {
         }
 
         fn deinitMemory(self: *Self) void {
-            for (self.series.items) |entry| entry.deinit(self.allocator);
             self.series.deinit(self.allocator);
+            if (self.series_names.len > 0) self.allocator.free(self.series_names);
             self.series_runtime.deinit(self.allocator);
             self.series_directory.deinit(self.allocator);
         }
@@ -1710,11 +2233,6 @@ fn mergeAggregateValue(result: *Aggregate, value: f64) void {
         result.sum += value;
     }
     result.count += 1;
-}
-
-fn writePoint(out: std.fs.File, timestamp: i64, value: f64) !void {
-    var buffer: [128]u8 = undefined;
-    try out.writeAll(try std.fmt.bufPrint(&buffer, "{d} {d}\n", .{ timestamp, value }));
 }
 
 fn timestampsStrictlyIncreasing(timestamps: []const i64) bool {
