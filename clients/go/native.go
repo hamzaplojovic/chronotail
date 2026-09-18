@@ -17,7 +17,7 @@ const expectedABIVersion = 2
 
 type nativeHandle = unsafe.Pointer
 type nativeSeries = C.ct_series_handle
-type nativeCursor = C.ct_range_cursor
+type nativeCursorState = *C.ct_cursor_state
 
 // ABIVersion returns the version exported by the loaded native library.
 func ABIVersion() uint32 { return uint32(C.ct_abi_version()) }
@@ -56,6 +56,13 @@ func valuePointer(values []float64) *C.double {
 		return nil
 	}
 	return (*C.double)(unsafe.Pointer(&values[0]))
+}
+
+func pointPointer(points []Point) *C.ct_point {
+	if len(points) == 0 {
+		return nil
+	}
+	return (*C.ct_point)(unsafe.Pointer(&points[0]))
 }
 
 func openWriterNative(path string, codec Codec) (nativeHandle, error) {
@@ -140,6 +147,26 @@ func rangeNative(handle nativeHandle, series string, start, end int64, timestamp
 	return int(count), status(code)
 }
 
+func rangePointsNative(handle nativeHandle, series string, start, end int64, points []Point) (int, error) {
+	var count C.size_t
+	code := C.ct_range_points(
+		handle,
+		stringPointer(series),
+		C.size_t(len(series)),
+		C.int64_t(start),
+		C.int64_t(end),
+		pointPointer(points),
+		C.size_t(len(points)),
+		&count,
+	)
+	runtime.KeepAlive(series)
+	runtime.KeepAlive(points)
+	if code == C.CT_BUFFER_TOO_SMALL {
+		return int(count), nil
+	}
+	return int(count), status(code)
+}
+
 func prepareSeriesNative(handle nativeHandle, series string) (nativeSeries, error) {
 	var prepared nativeSeries
 	code := C.ct_prepare_series(
@@ -166,6 +193,24 @@ func rangePreparedNative(handle nativeHandle, prepared nativeSeries, start, end 
 	)
 	runtime.KeepAlive(timestamps)
 	runtime.KeepAlive(values)
+	if code == C.CT_BUFFER_TOO_SMALL {
+		return int(count), nil
+	}
+	return int(count), status(code)
+}
+
+func rangePreparedPointsNative(handle nativeHandle, prepared nativeSeries, start, end int64, points []Point) (int, error) {
+	var count C.size_t
+	code := C.ct_range_points_prepared(
+		handle,
+		prepared,
+		C.int64_t(start),
+		C.int64_t(end),
+		pointPointer(points),
+		C.size_t(len(points)),
+		&count,
+	)
+	runtime.KeepAlive(points)
 	if code == C.CT_BUFFER_TOO_SMALL {
 		return int(count), nil
 	}
@@ -209,9 +254,14 @@ func aggregateFromNative(result C.ct_aggregate_result) Aggregate {
 	}
 }
 
-func cursorInitNative(handle nativeHandle, series string, start, end int64) (nativeCursor, error) {
-	var cursor nativeCursor
-	code := C.ct_cursor_init(
+func cursorStateCreateNative(
+	handle nativeHandle,
+	series string,
+	start int64,
+	end int64,
+) (nativeCursorState, error) {
+	var cursor nativeCursorState
+	code := C.ct_cursor_state_create(
 		handle,
 		stringPointer(series),
 		C.size_t(len(series)),
@@ -223,22 +273,38 @@ func cursorInitNative(handle nativeHandle, series string, start, end int64) (nat
 	return cursor, status(code)
 }
 
-func cursorNextNative(handle nativeHandle, cursor *nativeCursor, timestamps []int64, values []float64) (int, error) {
-	var count C.size_t
-	code := C.ct_cursor_next(
+func cursorStateNextNative(
+	handle nativeHandle,
+	cursor *nativeCursorState,
+	timestamps []int64,
+	values []float64,
+) (count int, complete bool, err error) {
+	var nativeCount C.size_t
+	var nativeComplete C.uint8_t
+	code := C.ct_cursor_state_next(
 		handle,
-		cursor,
+		*cursor,
 		timestampPointer(timestamps),
 		valuePointer(values),
 		C.size_t(len(timestamps)),
-		&count,
+		&nativeCount,
+		&nativeComplete,
 	)
 	runtime.KeepAlive(timestamps)
 	runtime.KeepAlive(values)
-	return int(count), status(code)
+	complete = nativeComplete != 0
+	if complete {
+		C.ct_cursor_state_destroy(*cursor)
+		*cursor = nil
+	}
+	return int(nativeCount), complete, status(code)
 }
 
-func cursorComplete(cursor *nativeCursor) bool { return cursor.complete != 0 }
+func cursorStateDestroyNative(cursor nativeCursorState) {
+	if cursor != nil {
+		C.ct_cursor_state_destroy(cursor)
+	}
+}
 
 func borrowRawPageNative(handle nativeHandle, prepared nativeSeries, timestamp int64) (RawPage, error) {
 	var view C.ct_raw_page_view

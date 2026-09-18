@@ -37,7 +37,14 @@ pub const Encoded = struct {
     statistics: Statistics,
 };
 
+pub const Point = extern struct { timestamp: i64, value: f64 };
+
+const ColumnOutput = struct { timestamps: []i64, values: []f64 };
+const RangeOutputMode = enum { columns, points };
+
 pub const View = struct {
+    const Bound = struct { index: usize, timestamp: i64 = undefined };
+
     bytes: []const u8,
     series_id: u32,
     timestamp_codec: TimestampCodec,
@@ -63,7 +70,7 @@ pub const View = struct {
                 break :blk @intCast(quotient + @intFromBool(remainder != 0));
             },
             .raw => self.rawLowerBound(target),
-            .delta_varint => self.rawLowerBound(target),
+            .delta_varint => self.deltaLowerBound(target).index,
         };
     }
 
@@ -129,19 +136,81 @@ pub const View = struct {
         values: []f64,
     ) !usize {
         if (timestamps.len != values.len) return error.InvalidBatch;
+        var output = ColumnOutput{ .timestamps = timestamps, .values = values };
+        return self.rangeOutput(start, end, .columns, &output);
+    }
+
+    pub fn rangePoints(self: View, start: i64, end: i64, points: []Point) !usize {
+        return self.rangeOutput(start, end, .points, points);
+    }
+
+    fn rangeOutput(
+        self: View,
+        start: i64,
+        end: i64,
+        comptime mode: RangeOutputMode,
+        output: switch (mode) {
+            .columns => *ColumnOutput,
+            .points => []Point,
+        },
+    ) !usize {
         if (end < start) return 0;
+        const capacity = switch (mode) {
+            .columns => output.timestamps.len,
+            .points => output.len,
+        };
+        if (capacity == 0) return self.countRange(start, end);
         var index = self.lowerBound(start);
         if (index == self.statistics.count) return 0;
+        if (start == end) {
+            if (self.timestampAt(index) != start) return 0;
+            const value = self.valueAt(index);
+            switch (mode) {
+                .columns => {
+                    output.timestamps[0] = start;
+                    output.values[0] = value;
+                },
+                .points => output[0] = .{ .timestamp = start, .value = value },
+            }
+            return 1;
+        }
         if (self.timestamp_codec == .raw and self.value_codec == .raw) {
             const raw_timestamps = self.rawTimestamps() orelse return error.InvalidPage;
             const raw_values = self.rawValues() orelse return error.InvalidPage;
             var high = self.rawLowerBound(end);
             if (high < raw_timestamps.len and raw_timestamps[high] == end) high += 1;
             const count = high - index;
-            const copied = @min(count, timestamps.len);
-            @memcpy(timestamps[0..copied], raw_timestamps[index..][0..copied]);
-            @memcpy(values[0..copied], raw_values[index..][0..copied]);
+            const copied = @min(count, capacity);
+            switch (mode) {
+                .columns => {
+                    @memcpy(output.timestamps[0..copied], raw_timestamps[index..][0..copied]);
+                    @memcpy(output.values[0..copied], raw_values[index..][0..copied]);
+                },
+                .points => for (output[0..copied], 0..) |*point, offset| {
+                    point.* = .{
+                        .timestamp = raw_timestamps[index + offset],
+                        .value = raw_values[index + offset],
+                    };
+                },
+            }
             return count;
+        }
+        const remaining = @as(usize, self.statistics.count) - index;
+        if (end >= self.statistics.timestamp_max and remaining > capacity) {
+            var timestamp_cursor = self.timestampCursor(index);
+            var value_cursor = self.valueCursor(index);
+            for (0..capacity) |output_index| {
+                const timestamp = timestamp_cursor.next();
+                const value = value_cursor.next();
+                switch (mode) {
+                    .columns => {
+                        output.timestamps[output_index] = timestamp;
+                        output.values[output_index] = value;
+                    },
+                    .points => output[output_index] = .{ .timestamp = timestamp, .value = value },
+                }
+            }
+            return remaining;
         }
         var timestamp_cursor = self.timestampCursor(index);
         var value_cursor = self.valueCursor(index);
@@ -149,10 +218,15 @@ pub const View = struct {
         while (index < self.statistics.count) : (index += 1) {
             const timestamp = timestamp_cursor.next();
             if (timestamp > end) break;
-            const value = value_cursor.next();
-            if (count < timestamps.len) {
-                timestamps[count] = timestamp;
-                values[count] = value;
+            if (count < capacity) {
+                const value = value_cursor.next();
+                switch (mode) {
+                    .columns => {
+                        output.timestamps[count] = timestamp;
+                        output.values[count] = value;
+                    },
+                    .points => output[count] = .{ .timestamp = timestamp, .value = value },
+                }
             }
             count += 1;
         }
@@ -161,21 +235,18 @@ pub const View = struct {
 
     pub fn countRange(self: View, start: i64, end: i64) usize {
         if (end < start) return 0;
-        var point_index = self.lowerBound(start);
-        if (point_index == self.statistics.count) return 0;
-        if (self.timestamp_codec == .raw) {
-            const raw_timestamps = self.rawTimestamps() orelse unreachable;
-            var high = self.rawLowerBound(end);
-            if (high < raw_timestamps.len and raw_timestamps[high] == end) high += 1;
-            return high - point_index;
+        if (start == end) {
+            const bound = self.lowerBoundTimestamp(start);
+            return @intFromBool(
+                bound.index < self.statistics.count and bound.timestamp == start,
+            );
         }
-        var timestamp_cursor = self.timestampCursor(point_index);
-        var count: usize = 0;
-        while (point_index < self.statistics.count) : (point_index += 1) {
-            if (timestamp_cursor.next() > end) break;
-            count += 1;
-        }
-        return count;
+        const low = self.lowerBound(start);
+        if (low == self.statistics.count) return 0;
+        const high = self.lowerBoundTimestamp(end);
+        return high.index - low + @intFromBool(
+            high.index < self.statistics.count and high.timestamp == end,
+        );
     }
 
     fn rawLowerBound(self: View, target: i64) usize {
@@ -190,6 +261,47 @@ pub const View = struct {
             }
         }
         return low;
+    }
+
+    fn lowerBoundTimestamp(self: View, target: i64) Bound {
+        if (self.statistics.count == 0) return .{ .index = 0 };
+        if (target <= self.statistics.timestamp_min)
+            return .{ .index = 0, .timestamp = self.statistics.timestamp_min };
+        if (target > self.statistics.timestamp_max)
+            return .{ .index = self.statistics.count };
+        if (self.timestamp_codec == .delta_varint) return self.deltaLowerBound(target);
+        const index = self.lowerBound(target);
+        return .{ .index = index, .timestamp = self.timestampAt(index) };
+    }
+
+    fn deltaLowerBound(self: View, target: i64) Bound {
+        const count: usize = self.statistics.count;
+        const group_count = (count + value_restart_interval - 1) / value_restart_interval;
+        var low: usize = 0;
+        var high = group_count;
+        while (low < high) {
+            const middle = low + (high - low) / 2;
+            if (self.timestampGroupAnchor(middle) <= target) {
+                low = middle + 1;
+            } else {
+                high = middle;
+            }
+        }
+        std.debug.assert(low > 0);
+        var index = (low - 1) * value_restart_interval;
+        var cursor = self.timestampCursor(index);
+        while (index < count) : (index += 1) {
+            const timestamp = cursor.next();
+            if (timestamp >= target) return .{ .index = index, .timestamp = timestamp };
+        }
+        return .{ .index = count };
+    }
+
+    fn timestampGroupAnchor(self: View, group: usize) i64 {
+        const directory_entry = @as(usize, self.timestamps_offset) + 4 + group * 4;
+        const offset = @as(usize, self.timestamps_offset) +
+            std.mem.readInt(u32, self.bytes[directory_entry..][0..4], .little);
+        return std.mem.readInt(i64, self.bytes[offset..][0..8], .little);
     }
 
     fn timestampBytes(self: View, index: usize) []const u8 {
@@ -344,7 +456,7 @@ pub fn encodeWithOptions(
         detectTimestampCodec(timestamps)
     else
         TimestampCodec.raw;
-    var timestamps_size: usize = switch (timestamp_codec) {
+    const timestamps_size: usize = switch (timestamp_codec) {
         .raw => timestamps.len * 8,
         .base_step => 16,
         .delta_varint => encodeDeltaTimestamps(output[timestamps_offset..], timestamps) orelse blk: {
@@ -352,12 +464,6 @@ pub fn encodeWithOptions(
             break :blk timestamps.len * 8;
         },
     };
-    if (timestamp_codec == .delta_varint and
-        timestamps_size * 100 > timestamps.len * 8 * (100 - compression_min_savings_percent))
-    {
-        timestamp_codec = .raw;
-        timestamps_size = timestamps.len * 8;
-    }
     const values_offset = std.mem.alignForward(
         usize,
         timestamps_offset + timestamps_size,
@@ -366,7 +472,7 @@ pub fn encodeWithOptions(
     const raw_values_size = values.len * 8;
     const maximum_stored_size = values_offset + raw_values_size;
     if (maximum_stored_size > output.len) return error.PageFull;
-    const statistics = calculateStatistics(timestamps, values);
+    var statistics: Statistics = undefined;
     switch (timestamp_codec) {
         .raw => if (@import("builtin").cpu.arch.endian() == .little) {
             @memcpy(
@@ -388,11 +494,33 @@ pub fn encodeWithOptions(
         },
         .delta_varint => {},
     }
-    const value_encoding = if (compress)
-        encodeCompressedValues(output[values_offset..], values) orelse
-            encodeRawValues(output[values_offset..], values)
-    else
-        encodeRawValues(output[values_offset..], values);
+    const value_encoding = if (compress) blk: {
+        var value_statistics = ValueStatistics{};
+        var values_observed: usize = 0;
+        const encoding = encodeCompressedValues(
+            output[values_offset..],
+            values,
+            &value_statistics,
+            &values_observed,
+        ) orelse fallback: {
+            for (values[values_observed..]) |value| value_statistics.add(value);
+            break :fallback encodeRawValues(output[values_offset..], values);
+        };
+        statistics = .{
+            .count = @intCast(timestamps.len),
+            .timestamp_min = timestamps[0],
+            .timestamp_max = timestamps[timestamps.len - 1],
+            .value_first = values[0],
+            .value_last = values[values.len - 1],
+            .value_min = value_statistics.minimum,
+            .value_max = value_statistics.maximum,
+            .value_sum = value_statistics.sum,
+        };
+        break :blk encoding;
+    } else blk: {
+        statistics = calculateStatistics(timestamps, values);
+        break :blk encodeRawValues(output[values_offset..], values);
+    };
     const stored_size = values_offset + value_encoding.size;
 
     @memcpy(output[0..8], format.data_magic);
@@ -422,13 +550,38 @@ pub fn encodeWithOptions(
     };
 }
 
-const ValueEncoding = struct { codec: ValueCodec, size: usize };
+const ValueStatistics = struct {
+    minimum: f64 = std.math.nan(f64),
+    maximum: f64 = std.math.nan(f64),
+    sum: f64 = 0,
+
+    inline fn add(self: *ValueStatistics, value: f64) void {
+        if (std.math.isNan(value)) return;
+        self.minimum = if (std.math.isNan(self.minimum)) value else @min(self.minimum, value);
+        self.maximum = if (std.math.isNan(self.maximum)) value else @max(self.maximum, value);
+        self.sum += value;
+    }
+};
+
+const DecodedValueStatistics = struct {
+    first: f64,
+    last: f64,
+    values: ValueStatistics,
+};
+
+const ValueEncoding = struct {
+    codec: ValueCodec,
+    size: usize,
+};
 
 fn encodeDeltaTimestamps(output: []u8, timestamps: []const i64) ?usize {
     const group_count = std.math.divCeil(usize, timestamps.len, value_restart_interval) catch
         return null;
     const directory_size = std.mem.alignForward(usize, 4 + group_count * 4, 8);
     if (directory_size >= output.len) return null;
+    const raw_size = timestamps.len * 8;
+    const compression_limit = raw_size * (100 - compression_min_savings_percent) / 100;
+    if (directory_size > compression_limit) return null;
     std.mem.writeInt(u32, output[0..4], @intCast(group_count), .little);
     @memset(output[4 + group_count * 4 .. directory_size], 0);
     var cursor = directory_size;
@@ -447,6 +600,7 @@ fn encodeDeltaTimestamps(output: []u8, timestamps: []const i64) ?usize {
             );
             cursor = writeVarint(output, cursor, delta) orelse return null;
         }
+        if (cursor > compression_limit) return null;
     }
     return cursor;
 }
@@ -464,11 +618,19 @@ fn encodeRawValues(output: []u8, values: []const f64) ValueEncoding {
     return .{ .codec = .raw, .size = size };
 }
 
-fn encodeCompressedValues(output: []u8, values: []const f64) ?ValueEncoding {
+fn encodeCompressedValues(
+    output: []u8,
+    values: []const f64,
+    statistics: *ValueStatistics,
+    observed: *usize,
+) ?ValueEncoding {
     const group_count = std.math.divCeil(usize, values.len, value_restart_interval) catch
         return null;
     const directory_size = std.mem.alignForward(usize, 4 + group_count * 4, 8);
     if (directory_size >= output.len) return null;
+    const raw_size = values.len * 8;
+    const compression_limit = raw_size * (100 - compression_min_savings_percent) / 100;
+    if (directory_size > compression_limit) return null;
     std.mem.writeInt(u32, output[0..4], @intCast(group_count), .little);
     @memset(output[4 + group_count * 4 .. directory_size], 0);
     var cursor = directory_size;
@@ -477,19 +639,24 @@ fn encodeCompressedValues(output: []u8, values: []const f64) ?ValueEncoding {
         const group = value_index / value_restart_interval;
         std.mem.writeInt(u32, output[4 + group * 4 ..][0..4], @intCast(cursor), .little);
         if (cursor + 8 > output.len) return null;
+        statistics.add(values[value_index]);
         var previous: u64 = @bitCast(values[value_index]);
         std.mem.writeInt(u64, output[cursor..][0..8], previous, .little);
         cursor += 8;
         value_index += 1;
         const group_end = @min(value_index + value_restart_interval - 1, values.len);
         while (value_index < group_end) : (value_index += 1) {
+            statistics.add(values[value_index]);
             const current: u64 = @bitCast(values[value_index]);
-            cursor = writeVarint(output, cursor, current ^ previous) orelse return null;
+            cursor = writeVarint(output, cursor, current ^ previous) orelse {
+                observed.* = value_index + 1;
+                return null;
+            };
             previous = current;
         }
+        observed.* = value_index;
+        if (cursor > compression_limit) return null;
     }
-    const raw_size = values.len * 8;
-    if (cursor * 100 > raw_size * (100 - compression_min_savings_percent)) return null;
     return .{ .codec = .xor_varint, .size = cursor };
 }
 
@@ -588,7 +755,10 @@ fn decodeInternal(
         .statistics = statistics,
     };
     if (timestamp_codec == .delta_varint) try validateDeltaTimestamps(view, authenticate);
-    if (value_codec == .xor_varint) try validateCompressedValues(view, authenticate);
+    const decoded_value_statistics = if (value_codec == .xor_varint)
+        try validateCompressedValues(view, authenticate)
+    else
+        null;
     if (timestamp_codec == .base_step) {
         const base = std.mem.readInt(i64, bytes[timestamps_offset..][0..8], .little);
         view.timestamp_step = std.mem.readInt(
@@ -614,13 +784,11 @@ fn decodeInternal(
             previous = view.timestampAt(count - 1);
         }
         if (previous != statistics.timestamp_max) return error.InvalidPage;
-    } else {
-        if (view.timestampAt(0) != statistics.timestamp_min or
-            view.timestampAt(count - 1) != statistics.timestamp_max)
-            return error.InvalidPage;
     }
-    if (authenticate and !statisticsEqual(calculateViewStatistics(view), statistics))
-        return error.InvalidPage;
+    if (authenticate) {
+        const actual = decoded_value_statistics orelse calculateViewValueStatistics(view);
+        if (!valueStatisticsEqual(actual, statistics)) return error.InvalidPage;
+    }
     return view;
 }
 
@@ -678,6 +846,8 @@ fn validateDeltaTimestamps(view: View, authenticate: bool) !void {
         if (encoded_offset != cursor or base + cursor + 8 > end) return error.InvalidPage;
         var timestamp = std.mem.readInt(i64, view.bytes[base + cursor ..][0..8], .little);
         cursor += 8;
+        if (group == 0 and timestamp != view.statistics.timestamp_min)
+            return error.InvalidPage;
         if (previous) |last| if (timestamp <= last) return error.InvalidPage;
         previous = timestamp;
         timestamp_index += 1;
@@ -697,7 +867,7 @@ fn validateDeltaTimestamps(view: View, authenticate: bool) !void {
         previous.? != view.statistics.timestamp_max) return error.InvalidPage;
 }
 
-fn validateCompressedValues(view: View, authenticate: bool) !void {
+fn validateCompressedValues(view: View, authenticate: bool) !?DecodedValueStatistics {
     const base: usize = view.values_offset;
     const end = base + view.values_size;
     const group_count = std.mem.readInt(u32, view.bytes[base..][0..4], .little);
@@ -714,11 +884,14 @@ fn validateCompressedValues(view: View, authenticate: bool) !void {
     if (!authenticate) {
         const first_offset = std.mem.readInt(u32, view.bytes[base + 4 ..][0..4], .little);
         if (first_offset != directory_size) return error.InvalidPage;
-        return;
+        return null;
     }
 
     var value_index: usize = 0;
     var cursor = directory_size;
+    var statistics = ValueStatistics{};
+    var first: f64 = undefined;
+    var last: f64 = undefined;
     for (0..group_count) |group| {
         const encoded_offset = std.mem.readInt(
             u32,
@@ -726,15 +899,24 @@ fn validateCompressedValues(view: View, authenticate: bool) !void {
             .little,
         );
         if (encoded_offset != cursor or base + cursor + 8 > end) return error.InvalidPage;
+        var bits = std.mem.readInt(u64, view.bytes[base + cursor ..][0..8], .little);
         cursor += 8;
+        const anchor: f64 = @bitCast(bits);
+        if (value_index == 0) first = anchor;
+        last = anchor;
+        statistics.add(anchor);
         value_index += 1;
         const group_end = @min(value_index + value_restart_interval - 1, view.statistics.count);
         while (value_index < group_end) : (value_index += 1) {
-            _ = try readVarint(view.bytes[base..end], &cursor);
+            bits ^= try readVarint(view.bytes[base..end], &cursor);
+            const value: f64 = @bitCast(bits);
+            last = value;
+            statistics.add(value);
         }
     }
     if (cursor != view.values_size or value_index != view.statistics.count)
         return error.InvalidPage;
+    return .{ .first = first, .last = last, .values = statistics };
 }
 
 fn readVarint(bytes: []const u8, cursor: *usize) !u64 {
@@ -788,40 +970,26 @@ fn calculateStatistics(timestamps: []const i64, values: []const f64) Statistics 
     };
 }
 
-fn calculateViewStatistics(view: View) Statistics {
-    var minimum = std.math.nan(f64);
-    var maximum = std.math.nan(f64);
-    var sum: f64 = 0;
+fn calculateViewValueStatistics(view: View) DecodedValueStatistics {
+    var statistics = ValueStatistics{};
     var cursor = view.valueCursor(0);
+    var first: f64 = undefined;
+    var last: f64 = undefined;
     for (0..view.statistics.count) |_| {
         const value = cursor.next();
-        if (!std.math.isNan(value)) {
-            minimum = if (std.math.isNan(minimum)) value else @min(minimum, value);
-            maximum = if (std.math.isNan(maximum)) value else @max(maximum, value);
-            sum += value;
-        }
+        if (cursor.index == 1) first = value;
+        last = value;
+        statistics.add(value);
     }
-    return .{
-        .count = view.statistics.count,
-        .timestamp_min = view.timestampAt(0),
-        .timestamp_max = view.timestampAt(view.statistics.count - 1),
-        .value_first = view.valueAt(0),
-        .value_last = view.valueAt(view.statistics.count - 1),
-        .value_min = minimum,
-        .value_max = maximum,
-        .value_sum = sum,
-    };
+    return .{ .first = first, .last = last, .values = statistics };
 }
 
-fn statisticsEqual(a: Statistics, b: Statistics) bool {
-    return a.count == b.count and
-        a.timestamp_min == b.timestamp_min and
-        a.timestamp_max == b.timestamp_max and
-        @as(u64, @bitCast(a.value_first)) == @as(u64, @bitCast(b.value_first)) and
-        @as(u64, @bitCast(a.value_last)) == @as(u64, @bitCast(b.value_last)) and
-        @as(u64, @bitCast(a.value_min)) == @as(u64, @bitCast(b.value_min)) and
-        @as(u64, @bitCast(a.value_max)) == @as(u64, @bitCast(b.value_max)) and
-        @as(u64, @bitCast(a.value_sum)) == @as(u64, @bitCast(b.value_sum));
+fn valueStatisticsEqual(a: DecodedValueStatistics, b: Statistics) bool {
+    return @as(u64, @bitCast(a.first)) == @as(u64, @bitCast(b.value_first)) and
+        @as(u64, @bitCast(a.last)) == @as(u64, @bitCast(b.value_last)) and
+        @as(u64, @bitCast(a.values.minimum)) == @as(u64, @bitCast(b.value_min)) and
+        @as(u64, @bitCast(a.values.maximum)) == @as(u64, @bitCast(b.value_max)) and
+        @as(u64, @bitCast(a.values.sum)) == @as(u64, @bitCast(b.value_sum));
 }
 
 fn writeFloat(output: *[8]u8, value: f64) void {
@@ -871,11 +1039,22 @@ test "irregular timestamp pages validate order and statistics" {
     const values = [_]f64{ 4, -2, 8, 1 };
     var buffer: [format.page_size]u8 = undefined;
     const encoded = try encode(&buffer, 3, &timestamps, &values);
-    try std.testing.expectEqual(TimestampCodec.raw, encoded.timestamp_codec);
+    try std.testing.expectEqual(TimestampCodec.delta_varint, encoded.timestamp_codec);
     const view = try decode(encoded.bytes, encoded.identity);
     try std.testing.expectEqual(@as(f64, -2), view.statistics.value_min);
     try std.testing.expectEqual(@as(f64, 8), view.statistics.value_max);
     try std.testing.expectEqual(@as(f64, 11), view.statistics.value_sum);
+
+    var found_timestamp: [1]i64 = undefined;
+    var found_value: [1]f64 = undefined;
+    try std.testing.expectEqual(
+        @as(usize, 1),
+        try view.rangeInto(10, 10, &found_timestamp, &found_value),
+    );
+    try std.testing.expectEqual(@as(i64, 10), found_timestamp[0]);
+    try std.testing.expectEqual(@as(f64, 8), found_value[0]);
+    try std.testing.expectEqual(@as(usize, 1), view.countRange(10, 10));
+    try std.testing.expectEqual(@as(usize, 0), view.countRange(9, 9));
 }
 
 test "page identity and semantic validation reject corruption" {
@@ -893,6 +1072,16 @@ test "page identity and semantic validation reject corruption" {
     try std.testing.expectError(
         error.InvalidPage,
         decode(buffer[0..raw_length], forged_identity),
+    );
+
+    const compressed = try encode(&buffer, 1, &.{ 1, 2, 3 }, &.{ 1, 1, 1 });
+    try std.testing.expectEqual(ValueCodec.xor_varint, compressed.value_codec);
+    const compressed_length = compressed.bytes.len;
+    writeFloat(buffer[88..96], 4);
+    const forged_compressed_identity = checksum.calculate(buffer[0..compressed_length]);
+    try std.testing.expectError(
+        error.InvalidPage,
+        decode(buffer[0..compressed_length], forged_compressed_identity),
     );
 }
 
@@ -917,4 +1106,51 @@ test "irregular timestamps and smooth values use bounded restart codecs" {
             @as(u64, @bitCast(view.valueAt(value_index))),
         );
     }
+    const targets = [_]i64{
+        timestamps[0],
+        timestamps[1] - 1,
+        timestamps[127],
+        timestamps[128] - 1,
+        timestamps[128],
+        timestamps[255] + 1,
+        timestamps[511],
+    };
+    for (targets) |target| {
+        var expected: usize = 0;
+        while (timestamps[expected] < target) : (expected += 1) {}
+        try std.testing.expectEqual(expected, view.lowerBound(target));
+    }
+    var no_timestamps: [0]i64 = .{};
+    var no_values: [0]f64 = .{};
+    try std.testing.expectEqual(
+        @as(usize, 1),
+        try view.rangeInto(
+            timestamps[128],
+            timestamps[128],
+            &no_timestamps,
+            &no_values,
+        ),
+    );
+    try std.testing.expectEqual(
+        @as(usize, 100),
+        try view.rangeInto(
+            timestamps[128],
+            timestamps[227],
+            &no_timestamps,
+            &no_values,
+        ),
+    );
+    var prefix_timestamps: [7]i64 = undefined;
+    var prefix_values: [7]f64 = undefined;
+    try std.testing.expectEqual(
+        timestamps.len - 128,
+        try view.rangeInto(
+            timestamps[128],
+            timestamps[timestamps.len - 1],
+            &prefix_timestamps,
+            &prefix_values,
+        ),
+    );
+    try std.testing.expectEqualSlices(i64, timestamps[128..135], &prefix_timestamps);
+    try std.testing.expectEqualSlices(f64, values[128..135], &prefix_values);
 }

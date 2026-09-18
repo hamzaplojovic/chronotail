@@ -5,6 +5,7 @@ const index = @import("index.zig");
 
 pub const header_size: usize = 64;
 pub const series_fixed_size: usize = 120;
+pub const size_max: usize = 256 * 1024 * 1024;
 
 pub const Series = struct {
     id: u32,
@@ -20,9 +21,10 @@ pub const Series = struct {
 pub const Manifest = struct {
     generation: u64,
     series: std.ArrayList(Series),
+    names: []u8 = &.{},
 
     pub fn deinit(self: *Manifest, allocator: std.mem.Allocator) void {
-        for (self.series.items) |series| series.deinit(allocator);
+        if (self.names.len > 0) allocator.free(self.names);
         self.series.deinit(allocator);
     }
 };
@@ -48,18 +50,65 @@ pub fn encode(
         total_size = std.math.add(usize, total_size, entry.name.len) catch
             return error.ManifestTooLarge;
     }
+    if (total_size > size_max) return error.ManifestTooLarge;
+    return encodeKnownSize(output, allocator, generation, series, total_size);
+}
+
+pub fn encodeKnownSize(
+    output: *std.ArrayList(u8),
+    allocator: std.mem.Allocator,
+    generation: u64,
+    series: []const Series,
+    total_size: usize,
+) !format.Pointer {
+    var iterator = SliceIterator{ .series = series };
+    return encodeKnownIterator(
+        output,
+        allocator,
+        generation,
+        series.len,
+        total_size,
+        &iterator,
+    );
+}
+
+const SliceIterator = struct {
+    series: []const Series,
+    index: usize = 0,
+
+    fn next(self: *SliceIterator) ?Series {
+        if (self.index == self.series.len) return null;
+        defer self.index += 1;
+        return self.series[self.index];
+    }
+};
+
+pub fn encodeKnownIterator(
+    output: *std.ArrayList(u8),
+    allocator: std.mem.Allocator,
+    generation: u64,
+    series_count: usize,
+    total_size: usize,
+    iterator: anytype,
+) !format.Pointer {
+    if (generation == 0 or series_count > std.math.maxInt(u32) or total_size < header_size)
+        return error.InvalidManifest;
+    if (total_size > size_max) return error.ManifestTooLarge;
     output.clearRetainingCapacity();
     try output.resize(allocator, total_size);
-    @memset(output.items, 0);
     @memcpy(output.items[0..8], format.manifest_magic);
     std.mem.writeInt(u64, output.items[8..16], generation, .little);
-    std.mem.writeInt(u32, output.items[16..20], @intCast(series.len), .little);
+    std.mem.writeInt(u32, output.items[16..20], @intCast(series_count), .little);
     std.mem.writeInt(u32, output.items[20..24], @intCast(total_size), .little);
+    @memset(output.items[24..header_size], 0);
 
     var cursor: usize = header_size;
-    for (series) |entry| {
+    var encoded_count: usize = 0;
+    while (iterator.next()) |entry| {
+        if (encoded_count == series_count) return error.InvalidManifest;
         std.mem.writeInt(u32, output.items[cursor..][0..4], entry.id, .little);
         std.mem.writeInt(u16, output.items[cursor + 4 ..][0..2], @intCast(entry.name.len), .little);
+        @memset(output.items[cursor + 6 .. cursor + 24], 0);
         var pointer_bytes: [format.pointer_size]u8 = undefined;
         entry.root.encode(&pointer_bytes);
         @memcpy(output.items[cursor + 24 ..][0..format.pointer_size], &pointer_bytes);
@@ -67,8 +116,9 @@ pub fn encode(
         cursor += series_fixed_size;
         @memcpy(output.items[cursor..][0..entry.name.len], entry.name);
         cursor += entry.name.len;
+        encoded_count += 1;
     }
-    std.debug.assert(cursor == total_size);
+    if (encoded_count != series_count or cursor != total_size) return error.InvalidManifest;
     return .{
         .offset = 0,
         .size = @intCast(total_size),
@@ -99,10 +149,16 @@ pub fn decode(
     const minimum_size = std.math.mul(usize, series_count, series_fixed_size) catch
         return error.InvalidManifest;
     if (minimum_size > bytes.len - header_size) return error.InvalidManifest;
-    var result = Manifest{ .generation = generation, .series = .empty };
+    const names_size = bytes.len - header_size - minimum_size;
+    var result = Manifest{
+        .generation = generation,
+        .series = .empty,
+        .names = if (names_size == 0) &.{} else try allocator.alloc(u8, names_size),
+    };
     errdefer result.deinit(allocator);
     try result.series.ensureTotalCapacity(allocator, series_count);
     var cursor: usize = header_size;
+    var names_cursor: usize = 0;
     for (0..series_count) |_| {
         const fixed_end = std.math.add(usize, cursor, series_fixed_size) catch
             return error.InvalidManifest;
@@ -123,16 +179,19 @@ pub fn decode(
         if (name_end > bytes.len) return error.InvalidManifest;
         if (result.series.items.len > 0 and result.series.items[result.series.items.len - 1].id >= id)
             return error.InvalidManifest;
-        const name = try allocator.dupe(u8, bytes[cursor..name_end]);
+        const name = result.names[names_cursor..][0..name_len];
+        @memcpy(name, bytes[cursor..name_end]);
         result.series.appendAssumeCapacity(.{
             .id = id,
             .name = name,
             .root = root,
             .summary = summary,
         });
+        names_cursor += name_len;
         cursor = name_end;
     }
-    if (cursor != bytes.len) return error.InvalidManifest;
+    if (cursor != bytes.len or names_cursor != result.names.len)
+        return error.InvalidManifest;
     return result;
 }
 
@@ -173,6 +232,10 @@ fn allZero(bytes: []const u8) bool {
     return true;
 }
 
+comptime {
+    std.debug.assert(size_max <= std.math.maxInt(u32));
+}
+
 test "manifest round trip preserves portable series roots" {
     const allocator = std.testing.allocator;
     const name_a = try allocator.dupe(u8, "cpu");
@@ -195,7 +258,7 @@ test "manifest round trip preserves portable series roots" {
         allocator,
         bytes.items,
         pointer,
-        format.control_size + bytes.items.len,
+        format.control_size + format.index_node_size,
     );
     defer decoded.deinit(allocator);
     try std.testing.expectEqual(@as(u64, 9), decoded.generation);

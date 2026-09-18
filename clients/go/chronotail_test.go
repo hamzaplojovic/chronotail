@@ -2,15 +2,136 @@ package chronotail
 
 import (
 	"errors"
+	"fmt"
 	"math"
 	"path/filepath"
 	"reflect"
 	"testing"
+	"unsafe"
 )
+
+func BenchmarkCursorChunks(b *testing.B) {
+	for _, codec := range []Codec{CodecRaw, CodecCompressed} {
+		b.Run(fmt.Sprintf("codec-%d", codec), func(b *testing.B) {
+			path := filepath.Join(b.TempDir(), "cursor.ctdb")
+			const pointCount = 100_000
+			timestamps := make([]int64, pointCount)
+			values := make([]float64, pointCount)
+			for index := range timestamps {
+				timestamps[index] = int64(index*7 + index%5)
+				values[index] = float64(index%1000) * 0.125
+			}
+			writer, err := OpenWriter(path, codec)
+			if err != nil {
+				b.Fatal(err)
+			}
+			if err := writer.Append("telemetry", timestamps, values); err != nil {
+				b.Fatal(err)
+			}
+			if err := writer.Close(); err != nil {
+				b.Fatal(err)
+			}
+			reader, err := OpenReader(path)
+			if err != nil {
+				b.Fatal(err)
+			}
+			defer reader.Close()
+
+			for _, capacity := range []int{16, 128, 1024} {
+				b.Run(fmt.Sprintf("capacity-%d", capacity), func(b *testing.B) {
+					outputTimestamps := make([]int64, capacity)
+					outputValues := make([]float64, capacity)
+					b.SetBytes(pointCount * 16)
+					b.ResetTimer()
+					for iteration := 0; iteration < b.N; iteration++ {
+						cursor, err := reader.Cursor(
+							"telemetry",
+							timestamps[0],
+							timestamps[len(timestamps)-1],
+						)
+						if err != nil {
+							b.Fatal(err)
+						}
+						count := 0
+						for !cursor.Complete() {
+							found, _, err := cursor.NextInto(outputTimestamps, outputValues)
+							if err != nil {
+								b.Fatal(err)
+							}
+							count += found
+						}
+						if count != pointCount {
+							b.Fatalf("cursor returned %d points, want %d", count, pointCount)
+						}
+					}
+				})
+			}
+		})
+	}
+}
+
+func BenchmarkRangeMaterialization(b *testing.B) {
+	for _, codec := range []Codec{CodecRaw, CodecCompressed} {
+		b.Run(fmt.Sprintf("codec-%d", codec), func(b *testing.B) {
+			path := filepath.Join(b.TempDir(), "range.ctdb")
+			const pointCount = 100_000
+			timestamps := make([]int64, pointCount)
+			values := make([]float64, pointCount)
+			for index := range timestamps {
+				timestamps[index] = int64(index*7 + index%5)
+				values[index] = float64(index%1000) * 0.125
+			}
+			writer, err := OpenWriter(path, codec)
+			if err != nil {
+				b.Fatal(err)
+			}
+			if err := writer.Append("telemetry", timestamps, values); err != nil {
+				b.Fatal(err)
+			}
+			if err := writer.Close(); err != nil {
+				b.Fatal(err)
+			}
+			reader, err := OpenReader(path)
+			if err != nil {
+				b.Fatal(err)
+			}
+			defer reader.Close()
+
+			b.SetBytes(pointCount * 16)
+			b.ReportAllocs()
+			b.ResetTimer()
+			for iteration := 0; iteration < b.N; iteration++ {
+				points, err := reader.Range(
+					"telemetry",
+					timestamps[0],
+					timestamps[len(timestamps)-1],
+				)
+				if err != nil {
+					b.Fatal(err)
+				}
+				if len(points) != pointCount {
+					b.Fatalf("Range returned %d points, want %d", len(points), pointCount)
+				}
+			}
+		})
+	}
+}
 
 func TestABIVersion(t *testing.T) {
 	if got := ABIVersion(); got != expectedABIVersion {
 		t.Fatalf("ABIVersion() = %d, want %d", got, expectedABIVersion)
+	}
+}
+
+func TestPointNativeLayout(t *testing.T) {
+	if unsafe.Sizeof(Point{}) != 16 || unsafe.Alignof(Point{}) != 8 ||
+		unsafe.Offsetof(Point{}.Timestamp) != 0 || unsafe.Offsetof(Point{}.Value) != 8 {
+		t.Fatalf("Point layout is size=%d align=%d timestamp=%d value=%d",
+			unsafe.Sizeof(Point{}),
+			unsafe.Alignof(Point{}),
+			unsafe.Offsetof(Point{}.Timestamp),
+			unsafe.Offsetof(Point{}.Value),
+		)
 	}
 }
 
@@ -134,6 +255,37 @@ func TestWriterReaderCompleteSurface(t *testing.T) {
 	if !reflect.DeepEqual(cursorTimestamps, timestamps[1:]) || !reflect.DeepEqual(cursorValues, values[1:]) {
 		t.Fatalf("cursor = %v %v", cursorTimestamps, cursorValues)
 	}
+	emptyCursor, err := reader.Cursor("cpu", 2, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !emptyCursor.Complete() {
+		t.Fatal("empty cursor must be complete immediately")
+	}
+	if count, complete, err := emptyCursor.NextInto(make([]int64, 1), make([]float64, 1)); err != nil || count != 0 || !complete {
+		t.Fatalf("empty cursor NextInto = %d, %v, %v", count, complete, err)
+	}
+
+	otherReader, err := OpenReader(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	state, err := cursorStateCreateNative(reader.handle, "cpu", 1000, 1001)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := cursorStateNextNative(
+		otherReader.handle,
+		&state,
+		make([]int64, 1),
+		make([]float64, 1),
+	); !errors.Is(err, ErrWrongHandle) {
+		t.Fatalf("foreign reader cursor error = %v, want ErrWrongHandle", err)
+	}
+	cursorStateDestroyNative(state)
+	if err := otherReader.Close(); err != nil {
+		t.Fatal(err)
+	}
 
 	if err := writer.Append("cpu", []int64{1005}, []float64{45}); err != nil {
 		t.Fatal(err)
@@ -241,6 +393,11 @@ func TestValidationAndNativeErrors(t *testing.T) {
 	}
 	if _, _, err := cursor.NextInto(nil, nil); !errors.Is(err, ErrInvalidCapacity) {
 		t.Fatalf("zero cursor capacity error = %v", err)
+	}
+	cursor.Close()
+	cursor.Close()
+	if !cursor.Complete() {
+		t.Fatal("closed cursor must report complete")
 	}
 	series, err := reader.PrepareSeries("cpu")
 	if err != nil {

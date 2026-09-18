@@ -9,6 +9,7 @@ extern "C" {
 #endif
 
 typedef void ct_handle;
+typedef struct ct_cursor_state ct_cursor_state;
 
 enum {
     CT_OK = 0,
@@ -40,6 +41,11 @@ typedef struct {
     double first;
     double last;
 } ct_aggregate_result;
+
+typedef struct {
+    int64_t timestamp;
+    double value;
+} ct_point;
 
 typedef struct {
     ct_series_handle series;
@@ -127,6 +133,27 @@ int ct_range_prepared(
     size_t capacity,
     size_t *count);
 
+/* Interleaved result variant for callers whose native point layout matches
+   ct_point. On CT_BUFFER_TOO_SMALL, count contains the required capacity. */
+int ct_range_points(
+    ct_handle *reader,
+    const char *series,
+    size_t series_len,
+    int64_t start,
+    int64_t end,
+    ct_point *points,
+    size_t capacity,
+    size_t *count);
+
+int ct_range_points_prepared(
+    ct_handle *reader,
+    ct_series_handle series,
+    int64_t start,
+    int64_t end,
+    ct_point *points,
+    size_t capacity,
+    size_t *count);
+
 /* Uses persistent subtree summaries whenever the requested range permits it. */
 int ct_aggregate(
     ct_handle *reader,
@@ -159,6 +186,27 @@ int ct_cursor_next(
     double *values,
     size_t capacity,
     size_t *count);
+
+/* Stateful cursor variant. Destroy explicitly after completion or when
+   iteration is abandoned. */
+int ct_cursor_state_create(
+    ct_handle *reader,
+    const char *series,
+    size_t series_len,
+    int64_t start,
+    int64_t end,
+    ct_cursor_state **out);
+
+int ct_cursor_state_next(
+    ct_handle *reader,
+    ct_cursor_state *cursor,
+    int64_t *timestamps,
+    double *values,
+    size_t capacity,
+    size_t *count,
+    uint8_t *complete);
+
+void ct_cursor_state_destroy(ct_cursor_state *cursor);
 
 /* The returned slices are valid until reader refresh or close. */
 int ct_borrow_raw_page(

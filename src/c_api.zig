@@ -8,10 +8,21 @@ const WriterState = struct {
     poisoned: bool = false,
 };
 
-const Handle = union(enum) {
+const HandleState = union(enum) {
     writer: WriterState,
     reader: chronotail.Reader,
 };
+
+const Handle = struct {
+    token: u64,
+    state: HandleState,
+};
+
+var next_handle_token = std.atomic.Value(u64).init(1);
+
+fn handleToken() u64 {
+    return next_handle_token.fetchAdd(1, .monotonic);
+}
 
 const ok = 0;
 const buffer_too_small = 1;
@@ -42,12 +53,23 @@ const CAggregate = extern struct {
     last: f64,
 };
 
+const CPoint = extern struct {
+    timestamp: i64,
+    value: f64,
+};
+
 const CRangeCursor = extern struct {
     series: CSeriesHandle,
     next_timestamp: i64,
     end: i64,
     complete: u8,
     reserved: [7]u8 = [_]u8{0} ** 7,
+};
+
+const CursorState = struct {
+    owner: *Handle,
+    owner_token: u64,
+    native: chronotail.RangeCursor,
 };
 
 const CRawPage = extern struct {
@@ -57,6 +79,46 @@ const CRawPage = extern struct {
     timestamp_min: i64,
     timestamp_max: i64,
 };
+
+comptime {
+    std.debug.assert(@sizeOf(CSeriesHandle) == 16);
+    std.debug.assert(@alignOf(CSeriesHandle) == 8);
+    std.debug.assert(@offsetOf(CSeriesHandle, "index") == 0);
+    std.debug.assert(@offsetOf(CSeriesHandle, "reserved") == 4);
+    std.debug.assert(@offsetOf(CSeriesHandle, "generation") == 8);
+
+    std.debug.assert(@sizeOf(CAggregate) == 48);
+    std.debug.assert(@alignOf(CAggregate) == 8);
+    std.debug.assert(@offsetOf(CAggregate, "count") == 0);
+    std.debug.assert(@offsetOf(CAggregate, "minimum") == 8);
+    std.debug.assert(@offsetOf(CAggregate, "maximum") == 16);
+    std.debug.assert(@offsetOf(CAggregate, "sum") == 24);
+    std.debug.assert(@offsetOf(CAggregate, "first") == 32);
+    std.debug.assert(@offsetOf(CAggregate, "last") == 40);
+
+    std.debug.assert(@sizeOf(CPoint) == 16);
+    std.debug.assert(@alignOf(CPoint) == 8);
+    std.debug.assert(@offsetOf(CPoint, "timestamp") == 0);
+    std.debug.assert(@offsetOf(CPoint, "value") == 8);
+    std.debug.assert(@sizeOf(CPoint) == @sizeOf(chronotail.Point));
+    std.debug.assert(@alignOf(CPoint) == @alignOf(chronotail.Point));
+
+    std.debug.assert(@sizeOf(CRangeCursor) == 40);
+    std.debug.assert(@alignOf(CRangeCursor) == 8);
+    std.debug.assert(@offsetOf(CRangeCursor, "series") == 0);
+    std.debug.assert(@offsetOf(CRangeCursor, "next_timestamp") == 16);
+    std.debug.assert(@offsetOf(CRangeCursor, "end") == 24);
+    std.debug.assert(@offsetOf(CRangeCursor, "complete") == 32);
+    std.debug.assert(@offsetOf(CRangeCursor, "reserved") == 33);
+
+    std.debug.assert(@sizeOf(CRawPage) == 40);
+    std.debug.assert(@alignOf(CRawPage) == 8);
+    std.debug.assert(@offsetOf(CRawPage, "timestamps") == 0);
+    std.debug.assert(@offsetOf(CRawPage, "values") == 8);
+    std.debug.assert(@offsetOf(CRawPage, "count") == 16);
+    std.debug.assert(@offsetOf(CRawPage, "timestamp_min") == 24);
+    std.debug.assert(@offsetOf(CRawPage, "timestamp_max") == 32);
+}
 
 export fn ct_abi_version() callconv(.c) u32 {
     return 2;
@@ -100,7 +162,10 @@ export fn ct_open_writer(
         owned.abort();
         return generic_error;
     };
-    handle.* = .{ .writer = .{ .appender = appender } };
+    handle.* = .{
+        .token = handleToken(),
+        .state = .{ .writer = .{ .appender = appender } },
+    };
     output.* = handle;
     return ok;
 }
@@ -115,7 +180,7 @@ export fn ct_append(
 ) callconv(.c) c_int {
     const handle = getHandle(handle_pointer) orelse return invalid_argument;
     const series_bytes = bytes(series, series_len) orelse return invalid_argument;
-    var writer = switch (handle.*) {
+    var writer = switch (handle.state) {
         .writer => |*state| state,
         else => return wrong_handle,
     };
@@ -138,7 +203,7 @@ export fn ct_prepare_append(
     maximum_points_before_checkpoint: usize,
 ) callconv(.c) c_int {
     const handle = getHandle(handle_pointer) orelse return invalid_argument;
-    var writer = switch (handle.*) {
+    var writer = switch (handle.state) {
         .writer => |*state| state,
         else => return wrong_handle,
     };
@@ -174,7 +239,7 @@ fn checkpointWithDurability(
     durability: chronotail.Durability,
 ) c_int {
     const handle = getHandle(handle_pointer) orelse return invalid_argument;
-    var writer = switch (handle.*) {
+    var writer = switch (handle.state) {
         .writer => |*state| state,
         else => return wrong_handle,
     };
@@ -203,7 +268,7 @@ export fn ct_open_reader(
         owned.close();
         return generic_error;
     };
-    handle.* = .{ .reader = reader };
+    handle.* = .{ .token = handleToken(), .state = .{ .reader = reader } };
     output.* = handle;
     return ok;
 }
@@ -211,7 +276,7 @@ export fn ct_open_reader(
 export fn ct_refresh(handle_pointer: ?*anyopaque, changed: ?*u8) callconv(.c) c_int {
     const output = changed orelse return invalid_argument;
     const handle = getHandle(handle_pointer) orelse return invalid_argument;
-    var reader = switch (handle.*) {
+    var reader = switch (handle.state) {
         .reader => |*state| state,
         else => return wrong_handle,
     };
@@ -233,7 +298,7 @@ export fn ct_range(
     const output_count = count orelse return invalid_argument;
     output_count.* = 0;
     const handle = getHandle(handle_pointer) orelse return invalid_argument;
-    var reader = switch (handle.*) {
+    var reader = switch (handle.state) {
         .reader => |*state| state,
         else => return wrong_handle,
     };
@@ -258,7 +323,7 @@ export fn ct_prepare_series(
 ) callconv(.c) c_int {
     const output = out orelse return invalid_argument;
     const handle = getHandle(handle_pointer) orelse return invalid_argument;
-    var reader = switch (handle.*) {
+    var reader = switch (handle.state) {
         .reader => |*state| state,
         else => return wrong_handle,
     };
@@ -282,7 +347,7 @@ export fn ct_range_prepared(
     output_count.* = 0;
     if (prepared.reserved != 0) return invalid_argument;
     const handle = getHandle(handle_pointer) orelse return invalid_argument;
-    var reader = switch (handle.*) {
+    var reader = switch (handle.state) {
         .reader => |*state| state,
         else => return wrong_handle,
     };
@@ -298,6 +363,63 @@ export fn ct_range_prepared(
     return if (found > capacity) buffer_too_small else ok;
 }
 
+export fn ct_range_points(
+    handle_pointer: ?*anyopaque,
+    series: ?[*]const u8,
+    series_len: usize,
+    start: i64,
+    end: i64,
+    points: ?[*]CPoint,
+    capacity: usize,
+    count: ?*usize,
+) callconv(.c) c_int {
+    const output_count = count orelse return invalid_argument;
+    output_count.* = 0;
+    const handle = getHandle(handle_pointer) orelse return invalid_argument;
+    var reader = switch (handle.state) {
+        .reader => |*state| state,
+        else => return wrong_handle,
+    };
+    const series_bytes = bytes(series, series_len) orelse return invalid_argument;
+    const output = pointBuffer(points, capacity) orelse return invalid_argument;
+    const found = reader.rangePoints(
+        series_bytes,
+        start,
+        end,
+        output,
+    ) catch |err| return statusFromError(err);
+    output_count.* = found;
+    return if (found > capacity) buffer_too_small else ok;
+}
+
+export fn ct_range_points_prepared(
+    handle_pointer: ?*anyopaque,
+    prepared: CSeriesHandle,
+    start: i64,
+    end: i64,
+    points: ?[*]CPoint,
+    capacity: usize,
+    count: ?*usize,
+) callconv(.c) c_int {
+    const output_count = count orelse return invalid_argument;
+    output_count.* = 0;
+    if (prepared.reserved != 0) return invalid_argument;
+    const handle = getHandle(handle_pointer) orelse return invalid_argument;
+    var reader = switch (handle.state) {
+        .reader => |*state| state,
+        else => return wrong_handle,
+    };
+    const output = pointBuffer(points, capacity) orelse return invalid_argument;
+    const found = reader.rangePreparedPoints(
+        .{ .index = prepared.index, .generation = prepared.generation },
+        start,
+        end,
+        output,
+    ) catch |err| return statusFromError(err);
+    output_count.* = found;
+    return if (found > capacity) buffer_too_small else ok;
+}
+
 export fn ct_aggregate(
     handle_pointer: ?*anyopaque,
     series: ?[*]const u8,
@@ -308,7 +430,7 @@ export fn ct_aggregate(
 ) callconv(.c) c_int {
     const output = out orelse return invalid_argument;
     const handle = getHandle(handle_pointer) orelse return invalid_argument;
-    var reader = switch (handle.*) {
+    var reader = switch (handle.state) {
         .reader => |*state| state,
         else => return wrong_handle,
     };
@@ -335,7 +457,7 @@ export fn ct_aggregate_prepared(
     const output = out orelse return invalid_argument;
     if (prepared.reserved != 0) return invalid_argument;
     const handle = getHandle(handle_pointer) orelse return invalid_argument;
-    var reader = switch (handle.*) {
+    var reader = switch (handle.state) {
         .reader => |*state| state,
         else => return wrong_handle,
     };
@@ -365,7 +487,7 @@ export fn ct_cursor_init(
 ) callconv(.c) c_int {
     const output = out orelse return invalid_argument;
     const handle = getHandle(handle_pointer) orelse return invalid_argument;
-    var reader = switch (handle.*) {
+    var reader = switch (handle.state) {
         .reader => |*state| state,
         else => return wrong_handle,
     };
@@ -394,7 +516,7 @@ export fn ct_cursor_next(
     if (cursor_state.series.reserved != 0 or !allZero(&cursor_state.reserved) or
         cursor_state.complete > 1 or capacity == 0) return invalid_argument;
     const handle = getHandle(handle_pointer) orelse return invalid_argument;
-    var reader = switch (handle.*) {
+    var reader = switch (handle.state) {
         .reader => |*state| state,
         else => return wrong_handle,
     };
@@ -419,6 +541,71 @@ export fn ct_cursor_next(
     return ok;
 }
 
+export fn ct_cursor_state_create(
+    handle_pointer: ?*anyopaque,
+    series: ?[*]const u8,
+    series_len: usize,
+    start: i64,
+    end: i64,
+    out: ?*?*anyopaque,
+) callconv(.c) c_int {
+    const output = out orelse return invalid_argument;
+    output.* = null;
+    const handle = getHandle(handle_pointer) orelse return invalid_argument;
+    var reader = switch (handle.state) {
+        .reader => |*state| state,
+        else => return wrong_handle,
+    };
+    const name = bytes(series, series_len) orelse return invalid_argument;
+    const native = reader.cursor(name, start, end) catch |err| return statusFromError(err);
+    const state = allocator.create(CursorState) catch return generic_error;
+    state.* = .{
+        .owner = handle,
+        .owner_token = handle.token,
+        .native = native,
+    };
+    output.* = state;
+    return ok;
+}
+
+export fn ct_cursor_state_next(
+    handle_pointer: ?*anyopaque,
+    cursor_pointer: ?*anyopaque,
+    timestamps: ?[*]i64,
+    values: ?[*]f64,
+    capacity: usize,
+    count: ?*usize,
+    complete: ?*u8,
+) callconv(.c) c_int {
+    const state: *CursorState = @ptrCast(@alignCast(cursor_pointer orelse
+        return invalid_argument));
+    const output_count = count orelse return invalid_argument;
+    const output_complete = complete orelse return invalid_argument;
+    output_count.* = 0;
+    output_complete.* = 0;
+    if (capacity == 0) return invalid_argument;
+    const handle = getHandle(handle_pointer) orelse return invalid_argument;
+    if (state.owner != handle or state.owner_token != handle.token) return wrong_handle;
+    var reader = switch (handle.state) {
+        .reader => |*reader_state| reader_state,
+        else => return wrong_handle,
+    };
+    const buffers = rangeBuffers(timestamps, values, capacity) orelse return invalid_argument;
+    const found = reader.cursorNext(
+        &state.native,
+        buffers.timestamps,
+        buffers.values,
+    ) catch |err| return statusFromError(err);
+    output_count.* = found;
+    output_complete.* = @intFromBool(state.native.complete);
+    return ok;
+}
+
+export fn ct_cursor_state_destroy(cursor_pointer: ?*anyopaque) callconv(.c) void {
+    const state: *CursorState = @ptrCast(@alignCast(cursor_pointer orelse return));
+    allocator.destroy(state);
+}
+
 export fn ct_borrow_raw_page(
     handle_pointer: ?*anyopaque,
     prepared: CSeriesHandle,
@@ -428,7 +615,7 @@ export fn ct_borrow_raw_page(
     const output = out orelse return invalid_argument;
     if (prepared.reserved != 0) return invalid_argument;
     const handle = getHandle(handle_pointer) orelse return invalid_argument;
-    var reader = switch (handle.*) {
+    var reader = switch (handle.state) {
         .reader => |*state| state,
         else => return wrong_handle,
     };
@@ -449,7 +636,7 @@ export fn ct_borrow_raw_page(
 export fn ct_close(handle_pointer: ?*anyopaque) callconv(.c) c_int {
     const handle = getHandle(handle_pointer) orelse return invalid_argument;
     var status: c_int = ok;
-    switch (handle.*) {
+    switch (handle.state) {
         .writer => |*writer| {
             if (writer.poisoned) {
                 writer.appender.abort();
@@ -494,6 +681,15 @@ fn rangeBuffers(
         .timestamps = if (timestamps) |pointer| pointer[0..capacity] else empty_timestamps[0..],
         .values = if (values) |pointer| pointer[0..capacity] else empty_values[0..],
     };
+}
+
+fn pointBuffer(points: ?[*]CPoint, capacity: usize) ?[]chronotail.Point {
+    if (capacity > 0 and points == null) return null;
+    var empty: [0]chronotail.Point = .{};
+    return if (points) |pointer|
+        @as([*]chronotail.Point, @ptrCast(pointer))[0..capacity]
+    else
+        empty[0..];
 }
 
 fn statusFromError(err: anyerror) c_int {

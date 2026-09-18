@@ -44,6 +44,111 @@ test "checkpoint reopen and range round trip" {
     try std.testing.expectEqualSlices(f64, &values, &found_values);
 }
 
+test "interleaved point ranges preserve required-count truncation" {
+    var temporary = std.testing.tmpDir(.{});
+    defer temporary.cleanup();
+
+    inline for (.{ chronotail.Codec.raw, chronotail.Codec.compressed }) |codec| {
+        const filename = if (codec == .raw) "points-raw.ctdb" else "points-compressed.ctdb";
+        const file = try temporary.dir.createFile(filename, .{ .read = true });
+        var writer = try chronotail.Appender.createOn(std.testing.allocator, file, codec);
+        try writer.appendBatch("cpu", &.{ 10, 20, 30 }, &.{ 1.5, 2.5, 3.5 });
+        try writer.close();
+
+        const reopened = try temporary.dir.openFile(filename, .{});
+        var reader = try chronotail.Reader.openOn(std.testing.allocator, reopened);
+        defer reader.close();
+        var points: [2]chronotail.Point = undefined;
+        try std.testing.expectEqual(
+            @as(usize, 3),
+            try reader.rangePoints("cpu", 0, 100, &points),
+        );
+        try std.testing.expectEqual(@as(i64, 10), points[0].timestamp);
+        try std.testing.expectEqual(@as(f64, 1.5), points[0].value);
+        try std.testing.expectEqual(@as(i64, 20), points[1].timestamp);
+        try std.testing.expectEqual(@as(f64, 2.5), points[1].value);
+    }
+}
+
+test "prepared empty series remain unpublished until first append" {
+    var temporary = std.testing.tmpDir(.{});
+    defer temporary.cleanup();
+
+    const file = try temporary.dir.createFile("prepared-empty.ctdb", .{ .read = true });
+    var writer = try chronotail.Appender.createOn(std.testing.allocator, file, .raw);
+    try writer.prepareSeries("empty", 8);
+    try writer.append("live", 10, 1.5);
+    try writer.checkpoint(false);
+
+    const snapshot = try temporary.dir.openFile("prepared-empty.ctdb", .{});
+    var reader = try chronotail.Reader.openOn(std.testing.allocator, snapshot);
+    defer reader.close();
+    try std.testing.expectError(error.SeriesNotFound, reader.prepare("empty"));
+    var timestamps: [1]i64 = undefined;
+    var values: [1]f64 = undefined;
+    try std.testing.expectEqual(
+        @as(usize, 1),
+        try reader.rangeInto("live", 10, 10, &timestamps, &values),
+    );
+
+    try writer.append("empty", 20, 2.5);
+    try writer.checkpoint(false);
+    try std.testing.expect(try reader.refresh());
+    try std.testing.expectEqual(
+        @as(usize, 1),
+        try reader.rangeInto("empty", 20, 20, &timestamps, &values),
+    );
+    try writer.close();
+}
+
+test "all prepared series may become dirty before one checkpoint" {
+    var temporary = std.testing.tmpDir(.{});
+    defer temporary.cleanup();
+
+    const file = try temporary.dir.createFile("prepared-dirty-capacity.ctdb", .{ .read = true });
+    var writer = try chronotail.Appender.createOn(std.testing.allocator, file, .raw);
+    const series_count = 128;
+    for (0..series_count) |series_index| {
+        var name_buffer: [32]u8 = undefined;
+        const name = try std.fmt.bufPrint(&name_buffer, "series-{d}", .{series_index});
+        try writer.prepareSeries(name, 1);
+    }
+    for (0..series_count) |series_index| {
+        var name_buffer: [32]u8 = undefined;
+        const name = try std.fmt.bufPrint(&name_buffer, "series-{d}", .{series_index});
+        try writer.append(name, @intCast(series_index), @floatFromInt(series_index));
+    }
+    try writer.checkpoint(false);
+    try writer.close();
+}
+
+test "text range buffers the full decimal representation" {
+    var temporary = std.testing.tmpDir(.{});
+    defer temporary.cleanup();
+    const database = try temporary.dir.createFile("text.ctdb", .{ .read = true });
+    var writer = try chronotail.Appender.createOn(std.testing.allocator, database, .raw);
+    const value: f64 = @bitCast(@as(u64, 1));
+    try writer.append("cpu", 7, value);
+    try writer.close();
+
+    const input = try temporary.dir.openFile("text.ctdb", .{});
+    var reader = try chronotail.Reader.openOn(std.testing.allocator, input);
+    defer reader.close();
+    const output = try temporary.dir.createFile("points.txt", .{ .read = true });
+    try std.testing.expectEqual(@as(usize, 1), try reader.range("cpu", 7, 7, output));
+    output.close();
+
+    const text = try temporary.dir.readFileAlloc(
+        std.testing.allocator,
+        "points.txt",
+        4 * 1024,
+    );
+    defer std.testing.allocator.free(text);
+    const expected = try std.fmt.allocPrint(std.testing.allocator, "7 {d}\n", .{value});
+    defer std.testing.allocator.free(expected);
+    try std.testing.expectEqualStrings(expected, text);
+}
+
 test "mapped reader refreshes to a newly checkpointed snapshot" {
     var temporary = std.testing.tmpDir(.{});
     defer temporary.cleanup();
@@ -70,6 +175,51 @@ test "mapped reader refreshes to a newly checkpointed snapshot" {
         try reader.rangeInto("cpu", 1, 2, &timestamps, &values),
     );
     try writer.close();
+}
+
+test "refresh observes root publication that does not grow the file" {
+    var temporary = std.testing.tmpDir(.{});
+    defer temporary.cleanup();
+    const directory = try temporary.dir.realpathAlloc(std.testing.allocator, ".");
+    defer std.testing.allocator.free(directory);
+    const path = try std.fs.path.join(std.testing.allocator, &.{ directory, "publish.ctdb" });
+    defer std.testing.allocator.free(path);
+
+    var writer = try chronotail.Appender.create(std.testing.allocator, path, .raw);
+    try writer.append("cpu", 1, 1);
+    try writer.checkpoint(false);
+    try writer.close();
+
+    const control_size = 64 * 1024;
+    var prior_control: [control_size]u8 = undefined;
+    var file = try std.fs.cwd().openFile(path, .{ .mode = .read_write });
+    try std.testing.expectEqual(control_size, try file.preadAll(&prior_control, 0));
+    file.close();
+
+    writer = try chronotail.Appender.open(std.testing.allocator, path, .raw);
+    try writer.append("cpu", 2, 2);
+    try writer.checkpoint(false);
+    try writer.close();
+
+    var published_control: [control_size]u8 = undefined;
+    file = try std.fs.cwd().openFile(path, .{ .mode = .read_write });
+    try std.testing.expectEqual(control_size, try file.preadAll(&published_control, 0));
+    try file.pwriteAll(&prior_control, 0);
+    file.close();
+
+    var reader = try chronotail.Reader.open(std.testing.allocator, path);
+    defer reader.close();
+    file = try std.fs.cwd().openFile(path, .{ .mode = .read_write });
+    try file.pwriteAll(&published_control, 0);
+    file.close();
+
+    try std.testing.expect(try reader.refresh());
+    var timestamps: [2]i64 = undefined;
+    var values: [2]f64 = undefined;
+    try std.testing.expectEqual(
+        @as(usize, 2),
+        try reader.rangeInto("cpu", 1, 2, &timestamps, &values),
+    );
 }
 
 test "prepared timestamp mapping handles block boundaries and missing timestamps" {

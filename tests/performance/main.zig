@@ -4,6 +4,7 @@ const chronotail = @import("chronotail");
 const Config = struct {
     points: usize = 1_000_000,
     quick: bool = false,
+    only: enum { all, append, checkpoint, control, query, read_api, lookup } = .all,
     repetitions: usize = 3,
     output_path: []const u8 = "tests/performance/results/latest.jsonl",
 
@@ -147,7 +148,6 @@ const Reporter = struct {
             },
         );
         try self.file.writeAll(text);
-        try self.file.sync();
     }
 };
 
@@ -271,6 +271,33 @@ pub fn main() !void {
             "matrix repetition {d}/{d}\n",
             .{ repetition + 1, config.repetitions },
         );
+        switch (config.only) {
+            .append => {
+                try runAppendMatrix(allocator, config, &reporter);
+                continue;
+            },
+            .checkpoint => {
+                try runCheckpointMatrix(allocator, config, &reporter);
+                continue;
+            },
+            .control => {
+                try runControlPlaneMatrix(allocator, config, &reporter);
+                continue;
+            },
+            .query => {
+                try runQueryMatrix(allocator, config, &reporter);
+                continue;
+            },
+            .read_api => {
+                try runReadApiMatrix(allocator, config, &reporter);
+                continue;
+            },
+            .lookup => {
+                try runSeriesLookupMatrix(allocator, config, &reporter);
+                continue;
+            },
+            .all => {},
+        }
         try runAppendMatrix(allocator, config, &reporter);
         try runStorageMatrix(allocator, config, &reporter);
         try runQueryMatrix(allocator, config, &reporter);
@@ -296,65 +323,119 @@ fn runReadApiMatrix(
     const path = ".profile-internal-read-apis.ctdb";
     deleteFile(path);
     defer deleteFile(path);
-    try writeDataset(allocator, path, .raw, dataset, 4_096);
-    var reader = try chronotail.Reader.open(allocator, path);
-    defer reader.close();
-    const handle = try reader.prepare("telemetry");
+    inline for (.{ chronotail.Codec.raw, chronotail.Codec.compressed }) |codec| {
+        deleteFile(path);
+        try writeDataset(allocator, path, codec, dataset, 4_096);
+        var reader = try chronotail.Reader.open(allocator, path);
+        defer reader.close();
+        const handle = try reader.prepare("telemetry");
 
-    inline for (.{ 16, 128, 1_024, 4_096 }) |capacity| {
-        var output_timestamps: [capacity]i64 = undefined;
-        var output_values: [capacity]f64 = undefined;
-        const repetitions: usize = if (config.quick) 1 else 10;
-        var digest: u64 = 0;
-        var timer = try std.time.Timer.start();
-        for (0..repetitions) |_| {
-            var cursor = try reader.cursorPrepared(
+        inline for (.{ 16, 128, 1_024, 4_096 }) |capacity| {
+            var output_timestamps: [capacity]i64 = undefined;
+            var output_values: [capacity]f64 = undefined;
+            const repetitions: usize = if (config.quick) 1 else 10;
+            var digest: u64 = 0;
+            var timer = try std.time.Timer.start();
+            for (0..repetitions) |_| {
+                var cursor = try reader.cursorPrepared(
+                    handle,
+                    dataset.timestamps[0],
+                    dataset.timestamps[dataset.timestamps.len - 1],
+                );
+                while (true) {
+                    const count = try reader.cursorNext(
+                        &cursor,
+                        &output_timestamps,
+                        &output_values,
+                    );
+                    if (count == 0) break;
+                    digest +%= @bitCast(output_values[count - 1]);
+                }
+            }
+            const elapsed = timer.read();
+            std.mem.doNotOptimizeAway(digest);
+            try reporter.emit(rateResult(.{
+                .group = "query",
+                .name = "cursor-full-range",
+                .codec = @tagName(codec),
+                .batch_size = capacity,
+                .operations = repetitions,
+                .points = repetitions * dataset.timestamps.len,
+                .elapsed_ns = elapsed,
+            }));
+        }
+
+        var empty_timestamps: [0]i64 = .{};
+        var empty_values: [0]f64 = .{};
+        const count_repetitions: usize = if (config.quick) 100 else 1_000;
+        var count_digest: usize = 0;
+        var count_timer = try std.time.Timer.start();
+        for (0..count_repetitions) |_| {
+            count_digest +%= try reader.rangePreparedInto(
                 handle,
                 dataset.timestamps[0],
                 dataset.timestamps[dataset.timestamps.len - 1],
+                &empty_timestamps,
+                &empty_values,
             );
-            while (true) {
-                const count = try reader.cursorNext(
-                    &cursor,
-                    &output_timestamps,
-                    &output_values,
-                );
-                if (count == 0) break;
-                digest +%= @bitCast(output_values[count - 1]);
-            }
         }
-        const elapsed = timer.read();
-        std.mem.doNotOptimizeAway(digest);
+        const count_elapsed = count_timer.read();
+        std.mem.doNotOptimizeAway(count_digest);
         try reporter.emit(rateResult(.{
             .group = "query",
-            .name = "cursor-full-range",
-            .codec = "raw",
-            .batch_size = capacity,
-            .operations = repetitions,
-            .points = repetitions * dataset.timestamps.len,
-            .elapsed_ns = elapsed,
+            .name = "range-into-count-only",
+            .codec = @tagName(codec),
+            .operations = count_repetitions,
+            .points = count_repetitions * dataset.timestamps.len,
+            .elapsed_ns = count_elapsed,
         }));
-    }
 
-    const borrow_count: usize = if (config.quick) 20_000 else 500_000;
-    var random_state: u64 = 0x243f6a8885a308d3;
-    var digest: u64 = 0;
-    var timer = try std.time.Timer.start();
-    for (0..borrow_count) |_| {
-        random_state = nextRandom(random_state);
-        const point_index = random_state % dataset.timestamps.len;
-        const view = try reader.borrowRawPage(handle, dataset.timestamps[point_index]);
-        digest +%= @bitCast(view.values[point_index % view.values.len]);
+        const text_repetitions: usize = if (config.quick) 1 else 5;
+        const discard = try std.fs.openFileAbsolute("/dev/null", .{ .mode = .write_only });
+        defer discard.close();
+        var text_timer = try std.time.Timer.start();
+        var text_digest: usize = 0;
+        for (0..text_repetitions) |_| {
+            text_digest +%= try reader.range(
+                "telemetry",
+                dataset.timestamps[0],
+                dataset.timestamps[dataset.timestamps.len - 1],
+                discard,
+            );
+        }
+        const text_elapsed = text_timer.read();
+        std.mem.doNotOptimizeAway(text_digest);
+        try reporter.emit(rateResult(.{
+            .group = "query",
+            .name = "text-full-range",
+            .codec = @tagName(codec),
+            .operations = text_repetitions,
+            .points = text_repetitions * dataset.timestamps.len,
+            .elapsed_ns = text_elapsed,
+        }));
+
+        if (codec == .raw) {
+            const borrow_count: usize = if (config.quick) 20_000 else 500_000;
+            var random_state: u64 = 0x243f6a8885a308d3;
+            var digest: u64 = 0;
+            var timer = try std.time.Timer.start();
+            for (0..borrow_count) |_| {
+                random_state = nextRandom(random_state);
+                const point_index = random_state % dataset.timestamps.len;
+                const view = try reader.borrowRawPage(handle, dataset.timestamps[point_index]);
+                digest +%= @bitCast(view.values[point_index % view.values.len]);
+            }
+            const elapsed = timer.read();
+            std.mem.doNotOptimizeAway(digest);
+            try reporter.emit(rateResult(.{
+                .group = "query",
+                .name = "borrow-raw-page",
+                .codec = "raw",
+                .operations = borrow_count,
+                .elapsed_ns = elapsed,
+            }));
+        }
     }
-    const elapsed = timer.read();
-    std.mem.doNotOptimizeAway(digest);
-    try reporter.emit(rateResult(.{
-        .group = "query",
-        .name = "borrow-raw-page",
-        .codec = "raw",
-        .operations = borrow_count,
-        .elapsed_ns = elapsed,
-    }));
 }
 
 fn parseArgs(allocator: std.mem.Allocator) !Config {
@@ -373,6 +454,24 @@ fn parseArgs(allocator: std.mem.Allocator) !Config {
             index += 1;
             if (index == args.len) return error.InvalidArguments;
             config.points = try std.fmt.parseInt(usize, args[index], 10);
+        } else if (std.mem.eql(u8, args[index], "--only")) {
+            index += 1;
+            if (index == args.len) return error.InvalidArguments;
+            if (std.mem.eql(u8, args[index], "append")) {
+                config.only = .append;
+            } else if (std.mem.eql(u8, args[index], "checkpoint")) {
+                config.only = .checkpoint;
+            } else if (std.mem.eql(u8, args[index], "control")) {
+                config.only = .control;
+            } else if (std.mem.eql(u8, args[index], "query")) {
+                config.only = .query;
+            } else if (std.mem.eql(u8, args[index], "read-api")) {
+                config.only = .read_api;
+            } else if (std.mem.eql(u8, args[index], "lookup")) {
+                config.only = .lookup;
+            } else {
+                return error.InvalidArguments;
+            }
         } else if (std.mem.eql(u8, args[index], "--repetitions")) {
             index += 1;
             if (index == args.len) return error.InvalidArguments;
@@ -391,7 +490,16 @@ fn runAppendMatrix(
     reporter: *Reporter,
 ) !void {
     std.debug.print("phase: append\n", .{});
-    const batch_sizes = [_]usize{ 1, 16, 64, 256, 1_000, 4_096, 65_536 };
+    const batch_sizes = [_]usize{
+        1,
+        16,
+        64,
+        256,
+        1_000,
+        chronotail.records_per_block,
+        4_096,
+        65_536,
+    };
     const dataset = try makeDataset(allocator, config.points, .dense, .smooth);
     defer dataset.deinit(allocator);
     inline for (.{ chronotail.Codec.raw, chronotail.Codec.compressed }) |codec| {
@@ -909,11 +1017,7 @@ fn runCheckpointMatrix(
         var next_timestamp: i64 = 0;
         var checkpoint_timer = try std.time.Timer.start();
         var total_timer = try std.time.Timer.start();
-        var snapshot_latencies: [5]u64 = undefined;
-        var snapshot_count: usize = 0;
-        var delta_latencies: [260]u64 = undefined;
-        var delta_count: usize = 0;
-        for (latencies, 0..) |*latency, checkpoint_index| {
+        for (latencies) |*latency| {
             for (timestamps, values) |*timestamp, *value| {
                 timestamp.* = next_timestamp;
                 value.* = 42.0 + @as(f64, @floatFromInt(@mod(next_timestamp, 1_000))) * 0.001;
@@ -923,13 +1027,6 @@ fn runCheckpointMatrix(
             checkpoint_timer.reset();
             try writer.checkpoint(false);
             latency.* = checkpoint_timer.read();
-            if (checkpoint_index % 64 == 0) {
-                snapshot_latencies[snapshot_count] = latency.*;
-                snapshot_count += 1;
-            } else {
-                delta_latencies[delta_count] = latency.*;
-                delta_count += 1;
-            }
         }
         const elapsed = total_timer.read();
         try writer.close();
@@ -944,22 +1041,6 @@ fn runCheckpointMatrix(
             .elapsed_ns = elapsed,
             .file_size = try fileSize(path),
         }, latencies)));
-        std.sort.heap(u64, snapshot_latencies[0..snapshot_count], {}, std.sort.asc(u64));
-        std.sort.heap(u64, delta_latencies[0..delta_count], {}, std.sort.asc(u64));
-        try reporter.emit(withLatencies(.{
-            .group = "checkpoint",
-            .name = "snapshot-only",
-            .codec = @tagName(codec),
-            .batch_size = points_per_checkpoint,
-            .operations = snapshot_count,
-        }, snapshot_latencies[0..snapshot_count]));
-        try reporter.emit(withLatencies(.{
-            .group = "checkpoint",
-            .name = "delta-only",
-            .codec = @tagName(codec),
-            .batch_size = points_per_checkpoint,
-            .operations = delta_count,
-        }, delta_latencies[0..delta_count]));
     }
 
     const path = ".profile-internal-checkpoint-sync.ctdb";
@@ -1024,6 +1105,80 @@ fn runControlPlaneMatrix(
         .codec = "compressed",
         .operations = open_count,
     }, open_latencies));
+
+    const many_path = ".profile-internal-control-many.ctdb";
+    deleteFile(many_path);
+    defer deleteFile(many_path);
+    const many_series_count: usize = 1_024;
+    var many_writer = try chronotail.Appender.create(allocator, many_path, .raw);
+    var name_buffer: [32]u8 = undefined;
+    for (0..many_series_count) |series_index| {
+        const name = try std.fmt.bufPrint(&name_buffer, "series-{d}", .{series_index});
+        try many_writer.append(name, 0, @floatFromInt(series_index));
+    }
+    try many_writer.close();
+    for (open_latencies) |*latency| {
+        var many_timer = try std.time.Timer.start();
+        var many_reader = try chronotail.Reader.open(allocator, many_path);
+        latency.* = many_timer.read();
+        many_reader.close();
+    }
+    std.sort.heap(u64, open_latencies, {}, std.sort.asc(u64));
+    try reporter.emit(withLatencies(.{
+        .group = "control-plane",
+        .name = "reader-open-many-series",
+        .codec = "raw",
+        .series_count = many_series_count,
+        .operations = open_count,
+    }, open_latencies));
+
+    const writer_open_count: usize = if (config.quick) 10 else 50;
+    for (open_latencies[0..writer_open_count]) |*latency| {
+        var writer_timer = try std.time.Timer.start();
+        var opened_writer = try chronotail.Appender.open(allocator, many_path, .raw);
+        latency.* = writer_timer.read();
+        opened_writer.abort();
+    }
+    std.sort.heap(
+        u64,
+        open_latencies[0..writer_open_count],
+        {},
+        std.sort.asc(u64),
+    );
+    try reporter.emit(withLatencies(.{
+        .group = "control-plane",
+        .name = "appender-open-many-series",
+        .codec = "raw",
+        .series_count = many_series_count,
+        .operations = writer_open_count,
+    }, open_latencies[0..writer_open_count]));
+
+    const sparse_checkpoint_count: usize = if (config.quick) 10 else 50;
+    var sparse_writer = try chronotail.Appender.open(allocator, many_path, .raw);
+    for (open_latencies[0..sparse_checkpoint_count], 0..) |*latency, checkpoint_index| {
+        try sparse_writer.append(
+            "series-0",
+            @intCast(checkpoint_index + 1),
+            @floatFromInt(checkpoint_index),
+        );
+        var sparse_timer = try std.time.Timer.start();
+        try sparse_writer.checkpoint(false);
+        latency.* = sparse_timer.read();
+    }
+    try sparse_writer.close();
+    std.sort.heap(
+        u64,
+        open_latencies[0..sparse_checkpoint_count],
+        {},
+        std.sort.asc(u64),
+    );
+    try reporter.emit(withLatencies(.{
+        .group = "control-plane",
+        .name = "checkpoint-one-of-many-series",
+        .codec = "raw",
+        .series_count = many_series_count,
+        .operations = sparse_checkpoint_count,
+    }, open_latencies[0..sparse_checkpoint_count]));
 
     var reader = try chronotail.Reader.open(allocator, path);
     defer reader.close();

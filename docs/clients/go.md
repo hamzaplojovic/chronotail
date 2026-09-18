@@ -102,9 +102,10 @@ log.Printf("count=%d min=%f max=%f sum=%f", summary.Count,
     summary.Minimum, summary.Maximum, summary.Sum)
 ```
 
-`Range` allocates exactly sized timestamp, value, and point slices. Aggregates
-return count, minimum, maximum, sum, first, and last without materializing
-points. Empty aggregates have count and sum zero and NaN for the other values.
+`Range` counts first, then allocates one exactly sized point slice and fills it
+directly. Aggregates return count, minimum, maximum, sum, first, and last
+without materializing points. Empty aggregates have count and sum zero and NaN
+for the other values.
 
 ## Bounded reads
 
@@ -131,6 +132,7 @@ cursor, err := reader.Cursor("cpu", start, end)
 if err != nil {
     log.Fatal(err)
 }
+defer cursor.Close() // releases state if the loop exits before completion
 timestamps := make([]int64, 4096)
 values := make([]float64, 4096)
 for !cursor.Complete() {
@@ -249,6 +251,7 @@ and `ErrClosed` do not enter the native library.
 | `Series.BorrowRawPage` | Returns snapshot-owned read-only slices or a typed status error. |
 | `Cursor.NextInto` | Copies the next bounded chunk and reports completion. |
 | `Cursor.Complete` | Reports whether iteration has ended. |
+| `Cursor.Close` | Releases traversal state early; completion releases it automatically. |
 
 ### Values
 

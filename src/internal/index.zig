@@ -47,6 +47,20 @@ pub const Node = struct {
     pub fn slice(self: *const Node) []const Entry {
         return self.entries[0..self.count];
     }
+
+    pub fn lowerBound(self: *const Node, timestamp: i64) u16 {
+        var low: usize = 0;
+        var high: usize = self.count;
+        while (low < high) {
+            const middle = low + (high - low) / 2;
+            if (self.entries[middle].summary.timestamp_max < timestamp) {
+                low = middle + 1;
+            } else {
+                high = middle;
+            }
+        }
+        return @intCast(low);
+    }
 };
 
 pub const View = struct {
@@ -113,21 +127,37 @@ pub fn dataEntry(pointer: format.Pointer, statistics: page.Statistics) !Entry {
     return .{ .pointer = pointer, .summary = Summary.fromPage(statistics) };
 }
 
-pub fn encode(node: *const Node, output: *[format.index_node_size]u8) !void {
+pub fn encode(node: *Node, output: *[format.index_node_size]u8) !void {
     if (node.count == 0 or node.count > entry_capacity) return error.InvalidIndex;
     if (node.level >= height_max) return error.InvalidIndex;
-    const summary = try summarize(node.slice());
-    if (!summaryEqual(summary, node.summary)) return error.InvalidIndex;
+    node.summary = try encodeEntries(
+        node.level,
+        node.series_id,
+        node.slice(),
+        output,
+    );
+}
+
+fn encodeEntries(
+    level: u8,
+    series_id: u32,
+    entries: []const Entry,
+    output: *[format.index_node_size]u8,
+) !Summary {
+    if (entries.len == 0 or entries.len > entry_capacity) return error.InvalidIndex;
+    if (level >= height_max) return error.InvalidIndex;
+    const summary = try summarize(entries);
     @memset(output, 0);
     @memcpy(output[0..8], format.index_magic);
-    output[8] = node.level;
-    std.mem.writeInt(u16, output[10..12], node.count, .little);
-    std.mem.writeInt(u32, output[12..16], node.series_id, .little);
-    encodeSummary(node.summary, output[16..80]);
-    for (node.slice(), 0..) |entry, index| {
+    output[8] = level;
+    std.mem.writeInt(u16, output[10..12], @intCast(entries.len), .little);
+    std.mem.writeInt(u32, output[12..16], series_id, .little);
+    encodeSummary(summary, output[16..80]);
+    for (entries, 0..) |entry, index| {
         const start = format.page_header_size + index * entry_size;
         encodeEntry(entry, output[start..][0..entry_size]);
     }
+    return summary;
 }
 
 pub fn decode(
@@ -170,113 +200,259 @@ fn decodeInternal(
         .count = count,
         .summary = decodeSummary(bytes[16..80]),
     };
+    var calculated_summary: ?Summary = null;
     for (0..count) |index| {
         const start = format.page_header_size + index * entry_size;
         node.entries[index] = try decodeEntry(bytes[start..][0..entry_size]);
         const required_kind: format.PointerKind = if (level == 0) .data else .index;
         if (node.entries[index].pointer.kind != required_kind) return error.InvalidIndex;
         try node.entries[index].pointer.validate(committed_size);
-        if (index > 0 and
-            node.entries[index - 1].summary.timestamp_max >=
-                node.entries[index].summary.timestamp_min)
-        {
+        if (node.entries[index].summary.point_count == 0 or
+            node.entries[index].summary.timestamp_min > node.entries[index].summary.timestamp_max)
             return error.InvalidIndex;
+        if (calculated_summary) |*summary| {
+            extendSummary(summary, node.entries[index].summary) catch |err| switch (err) {
+                error.TimestampNotIncreasing => return error.InvalidIndex,
+                else => return err,
+            };
+        } else {
+            calculated_summary = node.entries[index].summary;
         }
     }
     const used_end = format.page_header_size + @as(usize, count) * entry_size;
     if (!allZero(bytes[used_end..])) return error.InvalidIndex;
-    const calculated = try summarize(node.slice());
-    if (!summaryEqual(calculated, node.summary)) return error.InvalidIndex;
+    if (!summaryEqual(calculated_summary.?, node.summary)) return error.InvalidIndex;
     return node;
 }
+
+pub const AppendResult = struct {
+    root: Entry,
+    spine_depth: u8,
+};
 
 pub fn append(
     file: anytype,
     allocator: std.mem.Allocator,
     write_offset: *u64,
+    committed_size: u64,
     series_id: u32,
-    old_root: ?format.Pointer,
+    old_root: ?Entry,
     new_data_entries: []const Entry,
-) !format.Pointer {
-    if (new_data_entries.len == 0) return old_root orelse error.EmptyIndex;
+) !Entry {
+    var spine: [height_max]Node = undefined;
+    return (try appendWithSpine(
+        file,
+        allocator,
+        write_offset,
+        committed_size,
+        series_id,
+        old_root,
+        null,
+        new_data_entries,
+        &spine,
+    )).root;
+}
+
+pub fn appendedSpineDepth(spine: []const Node, new_entry_count: usize) !usize {
+    if (spine.len == 0 or spine.len > height_max or new_entry_count == 0)
+        return error.InvalidIndex;
+    for (spine) |node| {
+        if (node.count == 0 or node.count > entry_capacity or node.level >= height_max)
+            return error.InvalidIndex;
+    }
+    const leaf_entry_count = std.math.add(
+        usize,
+        spine[spine.len - 1].count,
+        new_entry_count,
+    ) catch return error.IndexTooLarge;
+    var node_count = std.math.divCeil(
+        usize,
+        leaf_entry_count,
+        entry_capacity,
+    ) catch return error.IndexTooLarge;
+    var spine_index = spine.len - 1;
+    while (spine_index > 0) {
+        spine_index -= 1;
+        const entry_count = std.math.add(
+            usize,
+            spine[spine_index].count - 1,
+            node_count,
+        ) catch return error.IndexTooLarge;
+        node_count = std.math.divCeil(usize, entry_count, entry_capacity) catch
+            return error.IndexTooLarge;
+    }
+    var depth = spine.len;
+    while (node_count > 1) {
+        if (depth == height_max) return error.IndexTooDeep;
+        node_count = std.math.divCeil(usize, node_count, entry_capacity) catch
+            return error.IndexTooLarge;
+        depth += 1;
+    }
+    return depth;
+}
+
+pub fn appendWithSpine(
+    file: anytype,
+    allocator: std.mem.Allocator,
+    write_offset: *u64,
+    committed_size: u64,
+    series_id: u32,
+    old_root: ?Entry,
+    old_spine: ?[]const Node,
+    new_data_entries: []const Entry,
+    output_spine: []Node,
+) !AppendResult {
+    if (new_data_entries.len == 0) return error.EmptyIndex;
     try validateEntries(new_data_entries, .data);
+    var stack_allocator = std.heap.stackFallback(8 * 1024, allocator);
+    const scratch_allocator = stack_allocator.get();
     var current: std.ArrayList(Entry) = .empty;
-    defer current.deinit(allocator);
+    defer current.deinit(scratch_allocator);
+    var new_spine_by_level: [height_max]Node = undefined;
 
     if (old_root) |root| {
-        var spine: [height_max]Node = undefined;
-        const depth = try loadRightSpine(file, root, &spine);
-        const leaf = &spine[depth - 1];
-        try current.ensureTotalCapacity(allocator, leaf.count + new_data_entries.len);
+        var loaded_spine: [height_max]Node = undefined;
+        const spine = if (old_spine) |cached| blk: {
+            try validateRightSpine(cached, root, series_id);
+            break :blk cached;
+        } else blk: {
+            const depth = try loadRightSpine(
+                file,
+                root,
+                committed_size,
+                series_id,
+                &loaded_spine,
+            );
+            break :blk loaded_spine[0..depth];
+        };
+        const write_in_place = old_spine != null and spine.ptr == output_spine.ptr;
+        const predicted_depth = if (write_in_place)
+            try appendedSpineDepth(spine, new_data_entries.len)
+        else
+            0;
+        if (write_in_place and output_spine.len < predicted_depth)
+            return error.IndexTooDeep;
+        const leaf = &spine[spine.len - 1];
+        try current.ensureTotalCapacity(scratch_allocator, leaf.count + new_data_entries.len);
         current.appendSliceAssumeCapacity(leaf.slice());
         current.appendSliceAssumeCapacity(new_data_entries);
         try validateEntries(current.items, .data);
-        var next = try writeLevel(file, allocator, write_offset, series_id, 0, current.items);
-        defer next.deinit(allocator);
+        var next = try writeLevel(
+            file,
+            scratch_allocator,
+            write_offset,
+            series_id,
+            0,
+            current.items,
+            if (write_in_place)
+                &output_spine[predicted_depth - 1]
+            else
+                &new_spine_by_level[0],
+        );
+        defer next.deinit(scratch_allocator);
 
-        var spine_index = depth - 1;
+        var spine_index = spine.len - 1;
         var root_level = spine[0].level;
         while (spine_index > 0) {
             spine_index -= 1;
             const parent = &spine[spine_index];
             current.clearRetainingCapacity();
-            try current.ensureTotalCapacity(allocator, parent.count - 1 + next.items.len);
+            try current.ensureTotalCapacity(
+                scratch_allocator,
+                parent.count - 1 + next.items.len,
+            );
             current.appendSliceAssumeCapacity(parent.slice()[0 .. parent.count - 1]);
             current.appendSliceAssumeCapacity(next.items);
             const replacement = try writeLevel(
                 file,
-                allocator,
+                scratch_allocator,
                 write_offset,
                 series_id,
                 parent.level,
                 current.items,
+                if (write_in_place)
+                    &output_spine[predicted_depth - 1 - parent.level]
+                else
+                    &new_spine_by_level[parent.level],
             );
-            next.deinit(allocator);
+            next.deinit(scratch_allocator);
             next = replacement;
         }
         while (next.items.len > 1) {
+            if (root_level == height_max - 1) return error.IndexTooDeep;
             root_level = try std.math.add(u8, root_level, 1);
             const replacement = try writeLevel(
                 file,
-                allocator,
+                scratch_allocator,
                 write_offset,
                 series_id,
                 root_level,
                 next.items,
+                if (write_in_place)
+                    &output_spine[predicted_depth - 1 - root_level]
+                else
+                    &new_spine_by_level[root_level],
             );
-            next.deinit(allocator);
+            next.deinit(scratch_allocator);
             next = replacement;
         }
-        return next.items[0].pointer;
+        const new_depth: usize = @as(usize, root_level) + 1;
+        if (output_spine.len < new_depth) return error.IndexTooDeep;
+        if (!write_in_place) {
+            for (0..new_depth) |spine_offset| {
+                output_spine[spine_offset] = new_spine_by_level[root_level - spine_offset];
+            }
+        } else {
+            std.debug.assert(new_depth == predicted_depth);
+        }
+        return .{ .root = next.items[0], .spine_depth = @intCast(new_depth) };
     }
 
-    current.appendSlice(allocator, new_data_entries) catch return error.OutOfMemory;
+    current.appendSlice(scratch_allocator, new_data_entries) catch return error.OutOfMemory;
     var level: u8 = 0;
-    var next = try writeLevel(file, allocator, write_offset, series_id, level, current.items);
-    defer next.deinit(allocator);
+    var next = try writeLevel(
+        file,
+        scratch_allocator,
+        write_offset,
+        series_id,
+        level,
+        current.items,
+        &new_spine_by_level[level],
+    );
+    defer next.deinit(scratch_allocator);
     while (next.items.len > 1) {
+        if (level == height_max - 1) return error.IndexTooDeep;
         level = try std.math.add(u8, level, 1);
         const replacement = try writeLevel(
             file,
-            allocator,
+            scratch_allocator,
             write_offset,
             series_id,
             level,
             next.items,
+            &new_spine_by_level[level],
         );
-        next.deinit(allocator);
+        next.deinit(scratch_allocator);
         next = replacement;
     }
-    return next.items[0].pointer;
+    const new_depth: usize = @as(usize, level) + 1;
+    if (output_spine.len < new_depth) return error.IndexTooDeep;
+    for (0..new_depth) |spine_offset| {
+        output_spine[spine_offset] = new_spine_by_level[level - spine_offset];
+    }
+    return .{ .root = next.items[0], .spine_depth = @intCast(new_depth) };
 }
 
 fn loadRightSpine(
     file: anytype,
-    root: format.Pointer,
+    root: Entry,
+    committed_size: u64,
+    series_id: u32,
     output: *[height_max]Node,
 ) !usize {
-    const committed_size = try file.getEndPos();
-    var pointer = root;
+    var pointer = root.pointer;
+    var expected_summary = root.summary;
+    var expected_level: ?u8 = null;
     var depth: usize = 0;
     while (true) {
         if (depth == output.len) return error.IndexTooDeep;
@@ -285,8 +461,32 @@ fn loadRightSpine(
         output[depth] = try decode(&bytes, pointer, committed_size);
         depth += 1;
         const node = &output[depth - 1];
+        if (node.series_id != series_id or !summaryEqual(node.summary, expected_summary))
+            return error.InvalidIndex;
+        if (expected_level) |level| if (node.level != level) return error.InvalidIndex;
         if (node.level == 0) return depth;
-        pointer = node.entries[node.count - 1].pointer;
+        const child = node.entries[node.count - 1];
+        pointer = child.pointer;
+        expected_summary = child.summary;
+        expected_level = node.level - 1;
+    }
+}
+
+fn validateRightSpine(spine: []const Node, root: Entry, series_id: u32) !void {
+    if (spine.len == 0 or spine.len > height_max) return error.InvalidIndex;
+    if (spine[0].series_id != series_id or
+        !summaryEqual(spine[0].summary, root.summary)) return error.InvalidIndex;
+    for (spine, 0..) |node, node_index| {
+        if (node.series_id != series_id or node.count == 0 or
+            node.count > entry_capacity or node.level >= height_max) return error.InvalidIndex;
+        if (node_index + 1 == spine.len) {
+            if (node.level != 0) return error.InvalidIndex;
+            continue;
+        }
+        const child = spine[node_index + 1];
+        const expected = node.entries[node.count - 1];
+        if (node.level != child.level + 1 or
+            !summaryEqual(expected.summary, child.summary)) return error.InvalidIndex;
     }
 }
 
@@ -297,6 +497,7 @@ fn writeLevel(
     series_id: u32,
     level: u8,
     entries: []const Entry,
+    rightmost: *Node,
 ) !std.ArrayList(Entry) {
     if (entries.len == 0) return error.EmptyIndex;
     const node_count = std.math.divCeil(usize, entries.len, entry_capacity) catch
@@ -318,17 +519,19 @@ fn writeLevel(
     while (entry_offset < entries.len) {
         const end = @min(entry_offset + entry_capacity, entries.len);
         const group = entries[entry_offset..end];
-        var node = Node{
-            .level = level,
-            .series_id = series_id,
-            .count = @intCast(group.len),
-            .summary = try summarize(group),
-        };
-        @memcpy(node.entries[0..group.len], group);
         const encoded_offset = node_index * format.index_node_size;
         const bytes: *[format.index_node_size]u8 =
             @ptrCast(encoded_nodes[encoded_offset..][0..format.index_node_size].ptr);
-        try encode(&node, bytes);
+        const summary = try encodeEntries(level, series_id, group, bytes);
+        if (end == entries.len) {
+            rightmost.* = .{
+                .level = level,
+                .series_id = series_id,
+                .count = @intCast(group.len),
+                .summary = summary,
+            };
+            @memcpy(rightmost.entries[0..group.len], group);
+        }
         const node_offset = std.math.add(u64, base_offset, encoded_offset) catch
             return error.IndexTooLarge;
         const pointer = format.Pointer{
@@ -337,7 +540,7 @@ fn writeLevel(
             .kind = .index,
             .identity = checksum.calculate(bytes),
         };
-        result.appendAssumeCapacity(.{ .pointer = pointer, .summary = node.summary });
+        result.appendAssumeCapacity(.{ .pointer = pointer, .summary = summary });
         entry_offset = end;
         node_index += 1;
     }
@@ -352,20 +555,24 @@ fn summarize(entries: []const Entry) !Summary {
     if (entries.len == 0) return error.EmptyIndex;
     var summary = entries[0].summary;
     for (entries[1..]) |entry| {
-        if (entry.summary.timestamp_min <= summary.timestamp_max)
-            return error.TimestampNotIncreasing;
-        summary.timestamp_max = entry.summary.timestamp_max;
-        summary.point_count = std.math.add(
-            u64,
-            summary.point_count,
-            entry.summary.point_count,
-        ) catch return error.IndexTooLarge;
-        summary.value_min = minimum(summary.value_min, entry.summary.value_min);
-        summary.value_max = maximum(summary.value_max, entry.summary.value_max);
-        summary.value_sum += entry.summary.value_sum;
-        summary.value_last = entry.summary.value_last;
+        try extendSummary(&summary, entry.summary);
     }
     return summary;
+}
+
+fn extendSummary(summary: *Summary, next: Summary) !void {
+    if (next.timestamp_min <= summary.timestamp_max)
+        return error.TimestampNotIncreasing;
+    summary.timestamp_max = next.timestamp_max;
+    summary.point_count = std.math.add(
+        u64,
+        summary.point_count,
+        next.point_count,
+    ) catch return error.IndexTooLarge;
+    summary.value_min = minimum(summary.value_min, next.value_min);
+    summary.value_max = maximum(summary.value_max, next.value_max);
+    summary.value_sum += next.value_sum;
+    summary.value_last = next.value_last;
 }
 
 fn validateEntries(entries: []const Entry, kind: format.PointerKind) !void {
@@ -469,6 +676,32 @@ comptime {
         format.index_node_size);
 }
 
+test "appended spine depth grows only when parent capacity requires it" {
+    const leaf = Node{
+        .level = 0,
+        .series_id = 1,
+        .count = entry_capacity,
+        .summary = undefined,
+    };
+    try std.testing.expectEqual(@as(usize, 2), try appendedSpineDepth(&.{leaf}, 1));
+
+    const root = Node{
+        .level = 1,
+        .series_id = 1,
+        .count = entry_capacity,
+        .summary = undefined,
+    };
+    try std.testing.expectEqual(
+        @as(usize, 2),
+        try appendedSpineDepth(&.{ root, leaf }, 1),
+    );
+    try std.testing.expectEqual(
+        @as(usize, 3),
+        try appendedSpineDepth(&.{ root, leaf }, entry_capacity * entry_capacity),
+    );
+    try std.testing.expectError(error.InvalidIndex, appendedSpineDepth(&.{leaf}, 0));
+}
+
 test "index nodes round trip and authenticate children externally" {
     var node = Node{
         .level = 0,
@@ -492,6 +725,9 @@ test "index nodes round trip and authenticate children externally" {
     };
     const decoded = try decode(&bytes, pointer, format.control_size + 10_000);
     try std.testing.expectEqual(@as(u16, 2), decoded.count);
+    try std.testing.expectEqual(@as(u16, 0), decoded.lowerBound(10));
+    try std.testing.expectEqual(@as(u16, 1), decoded.lowerBound(11));
+    try std.testing.expectEqual(@as(u16, 2), decoded.lowerBound(21));
     bytes[format.page_header_size + 5] ^= 1;
     try std.testing.expectError(
         error.ChecksumMismatch,
@@ -501,6 +737,20 @@ test "index nodes round trip and authenticate children externally" {
     try encode(&node, &bytes);
     std.mem.writeInt(i64, bytes[format.page_header_size + entry_size + 32 ..][0..8], 5, .little);
     var forged_pointer = pointer;
+    forged_pointer.identity = checksum.calculate(&bytes);
+    try std.testing.expectError(
+        error.InvalidIndex,
+        decode(&bytes, forged_pointer, format.control_size + 10_000),
+    );
+
+    try encode(&node, &bytes);
+    std.mem.writeInt(
+        u64,
+        bytes[format.page_header_size + format.pointer_size + 16 ..][0..8],
+        0,
+        .little,
+    );
+    std.mem.writeInt(u64, bytes[32..40], 10, .little);
     forged_pointer.identity = checksum.calculate(&bytes);
     try std.testing.expectError(
         error.InvalidIndex,
@@ -530,6 +780,7 @@ test "persistent append rewrites only the right spine" {
         file,
         std.testing.allocator,
         &write_offset,
+        prefix.len,
         1,
         null,
         &entries,
@@ -537,9 +788,10 @@ test "persistent append rewrites only the right spine" {
     var first_root_bytes: [format.index_node_size]u8 = undefined;
     try std.testing.expectEqual(
         first_root_bytes.len,
-        try file.preadAll(&first_root_bytes, first_root.offset),
+        try file.preadAll(&first_root_bytes, first_root.pointer.offset),
     );
-    const first_node = try decode(&first_root_bytes, first_root, try file.getEndPos());
+    const first_node = try decode(&first_root_bytes, first_root.pointer, try file.getEndPos());
+    try std.testing.expect(summaryEqual(first_root.summary, first_node.summary));
     try std.testing.expectEqual(@as(u8, 1), first_node.level);
 
     var extra: [30]Entry = undefined;
@@ -556,18 +808,20 @@ test "persistent append rewrites only the right spine" {
         file,
         std.testing.allocator,
         &write_offset,
+        offset_before_append,
         1,
         first_root,
         &extra,
     );
-    try std.testing.expect(second_root.offset >= offset_before_append);
-    try std.testing.expect(second_root.offset != first_root.offset);
+    try std.testing.expect(second_root.pointer.offset >= offset_before_append);
+    try std.testing.expect(second_root.pointer.offset != first_root.pointer.offset);
     var second_root_bytes: [format.index_node_size]u8 = undefined;
     try std.testing.expectEqual(
         second_root_bytes.len,
-        try file.preadAll(&second_root_bytes, second_root.offset),
+        try file.preadAll(&second_root_bytes, second_root.pointer.offset),
     );
-    const second_node = try decode(&second_root_bytes, second_root, try file.getEndPos());
+    const second_node = try decode(&second_root_bytes, second_root.pointer, try file.getEndPos());
+    try std.testing.expect(summaryEqual(second_root.summary, second_node.summary));
     try std.testing.expectEqual(@as(u64, 1_300), second_node.summary.point_count);
     try std.testing.expectEqual(@as(i64, 1_299), second_node.summary.timestamp_max);
 }

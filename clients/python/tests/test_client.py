@@ -62,6 +62,20 @@ class ClientTest(unittest.TestCase):
                 self.assertTrue(math.isnan(summary.minimum))
                 self.assertTrue(math.isnan(summary.last))
 
+    def test_strided_buffers_use_the_iterable_fallback(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "strided.ctdb"
+            timestamps = memoryview(array("q", [1, 99, 2, 99, 3]))[::2]
+            values = memoryview(array("d", [1.5, 99.0, 2.5, 99.0, 3.5]))[::2]
+            with chronotail.Writer(path, codec="compressed") as writer:
+                writer.append_many("cpu", timestamps, values)
+                writer.checkpoint()
+            with chronotail.Reader(path) as reader:
+                self.assertEqual(
+                    reader.range("cpu", 1, 3),
+                    [(1, 1.5), (2, 2.5), (3, 3.5)],
+                )
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -106,6 +106,11 @@ provided buffers contain the available prefix. Use `ct_prepare_series` and
 `ct_range_prepared` to avoid repeated series-name lookup. A prepared handle's
 `reserved` field must remain zero.
 
+Call `ct_range_points` or `ct_range_points_prepared` when the destination is an
+array of interleaved `ct_point` values. These variants have the same inclusive
+range and truncation contract, but avoid separate column arrays and a later
+structure-of-arrays to array-of-structures conversion.
+
 ## Bounded cursor
 
 ```c
@@ -125,6 +130,12 @@ while (!cursor.complete) {
 
 Zero-initialize `ct_range_cursor`; all reserved bytes must stay zero. Cursor
 capacity must be positive.
+
+For small repeated chunks, prefer `ct_cursor_state_create` and
+`ct_cursor_state_next`. The opaque state retains native tree and page traversal
+between calls. Call `ct_cursor_state_destroy` after completion or if iteration
+is abandoned. The original value cursor remains available for source and binary
+compatibility.
 
 ## Aggregates and borrowed pages
 
@@ -178,8 +189,10 @@ through the CLI and Zig API, not the C ABI.
 | `ct_range` | Copies a named-series prefix and returns total required capacity. |
 | `ct_prepare_series` | Resolves a series to a generation-bound handle. |
 | `ct_range_prepared` | Performs the copied range using a prepared handle. |
+| `ct_range_points` / `ct_range_points_prepared` | Copies directly into interleaved `ct_point` values. |
 | `ct_aggregate` / `ct_aggregate_prepared` | Computes count/min/max/sum/first/last. |
 | `ct_cursor_init` / `ct_cursor_next` | Streams a range through fixed caller buffers. |
+| `ct_cursor_state_create` / `ct_cursor_state_next` / `ct_cursor_state_destroy` | Streams while retaining native traversal state; recommended for small chunks. |
 | `ct_borrow_raw_page` | Borrows snapshot-owned raw column pointers. |
 | `ct_close` | Consumes a reader or writer handle even when teardown reports an error. |
 
