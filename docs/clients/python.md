@@ -253,7 +253,7 @@ still runs; explicitly checkpoint before acknowledging disk-durable data.
 |---|---|
 | `Reader(path)` | Opens and validates one immutable committed snapshot. |
 | `range(series, start, end)` | Returns all inclusive-range points as `(timestamp, value)` tuples. |
-| `iter_range(series, start, end, *, batch_size=1024)` | Next additive release: yields inclusive-range points with bounded reusable buffers; requires all native stateful cursor symbols or raises `NotImplementedError`; explicitly close on early termination. |
+| `iter_range(series, start, end, *, batch_size=1024)` | 2.2.0: yields inclusive-range points with bounded reusable buffers; requires all native stateful cursor symbols or raises `NotImplementedError`; explicitly close on early termination. |
 | `aggregate(series, start, end)` | Returns an `Aggregate` without materializing points. |
 | `prepare(series)` | Resolves an owner/snapshot-bound `SeriesHandle`; does not require lookup symbols. |
 | `lookup(series, timestamp, mode, *, max_distance=None)` | Returns an original copied tuple or `None`, with an inclusive optional u64 distance. |
