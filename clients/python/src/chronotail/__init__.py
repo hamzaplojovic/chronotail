@@ -4,7 +4,7 @@ import ctypes
 import os
 import sys
 from pathlib import Path
-from typing import Iterable, NamedTuple
+from typing import Generator, Iterable, NamedTuple
 
 ABI_VERSION = 2
 CT_OK = 0
@@ -87,6 +87,36 @@ _lib.ct_range.argtypes = [
     ctypes.POINTER(ctypes.c_size_t),
 ]
 _lib.ct_range.restype = ctypes.c_int
+# Earlier ABI-v2 libraries do not export the opaque stateful cursor capability.
+try:
+    _lib.ct_cursor_state_create
+    _lib.ct_cursor_state_next
+    _lib.ct_cursor_state_destroy
+except AttributeError:
+    _has_stateful_cursor = False
+else:
+    _has_stateful_cursor = True
+    _lib.ct_cursor_state_create.argtypes = [
+        _handle,
+        ctypes.c_char_p,
+        ctypes.c_size_t,
+        ctypes.c_int64,
+        ctypes.c_int64,
+        ctypes.POINTER(_handle),
+    ]
+    _lib.ct_cursor_state_create.restype = ctypes.c_int
+    _lib.ct_cursor_state_next.argtypes = [
+        _handle,
+        _handle,
+        _i64_p,
+        _f64_p,
+        ctypes.c_size_t,
+        ctypes.POINTER(ctypes.c_size_t),
+        ctypes.POINTER(ctypes.c_uint8),
+    ]
+    _lib.ct_cursor_state_next.restype = ctypes.c_int
+    _lib.ct_cursor_state_destroy.argtypes = [_handle]
+    _lib.ct_cursor_state_destroy.restype = None
 _lib.ct_aggregate.argtypes = [
     _handle,
     ctypes.c_char_p,
@@ -274,10 +304,13 @@ class Reader:
         path_bytes = _encoded(path)
         self._handle = _handle()
         _check(_lib.ct_open_reader(path_bytes, len(path_bytes), ctypes.byref(self._handle)))
+        self._iteration_epoch = 0
 
     def refresh(self) -> bool:
         changed = ctypes.c_uint8()
         _check(_lib.ct_refresh(self._handle, ctypes.byref(changed)))
+        if changed.value:
+            self._iteration_epoch += 1
         return bool(changed.value)
 
     def range(self, series: str, start: int, end: int) -> list[tuple[int, float]]:
@@ -303,6 +336,86 @@ class Reader:
                 continue
             _check(code)
             return [(timestamps[i], values[i]) for i in range(count.value)]
+
+    def iter_range(
+        self, series: str, start: int, end: int, *, batch_size: int = 1024
+    ) -> Generator[tuple[int, float], None, None]:
+        """Yield inclusive-range points from this snapshot using bounded buffers.
+
+        Close the generator when stopping early. A changed refresh or reader
+        close invalidates it, including points already buffered for yielding.
+        Missing native stateful cursor symbols raise NotImplementedError here.
+        """
+        if (
+            not isinstance(batch_size, int)
+            or isinstance(batch_size, bool)
+            or batch_size < 1
+            or batch_size > sys.maxsize // ctypes.sizeof(ctypes.c_int64)
+        ):
+            raise ValueError("batch_size must be a positive integer fitting native buffers")
+        for name, bound in (("start", start), ("end", end)):
+            if (
+                not isinstance(bound, int)
+                or isinstance(bound, bool)
+                or not -(1 << 63) <= bound < (1 << 63)
+            ):
+                raise ValueError(f"{name} must be a signed 64-bit integer")
+        if not _has_stateful_cursor:
+            raise NotImplementedError(
+                "Reader.iter_range requires native ct_cursor_state_create, "
+                "ct_cursor_state_next, and ct_cursor_state_destroy symbols"
+            )
+        epoch = self._iteration_epoch
+        self._check_iteration(epoch)
+        series_bytes = series.encode("utf-8")
+
+        def iterate() -> Generator[tuple[int, float], None, None]:
+            self._check_iteration(epoch)
+            timestamps = (ctypes.c_int64 * batch_size)()
+            values = (ctypes.c_double * batch_size)()
+            cursor = _handle()
+            try:
+                _check(
+                    _lib.ct_cursor_state_create(
+                        self._handle,
+                        series_bytes,
+                        len(series_bytes),
+                        start,
+                        end,
+                        ctypes.byref(cursor),
+                    )
+                )
+                while True:
+                    self._check_iteration(epoch)
+                    count = ctypes.c_size_t()
+                    complete = ctypes.c_uint8()
+                    _check(
+                        _lib.ct_cursor_state_next(
+                            self._handle,
+                            cursor,
+                            timestamps,
+                            values,
+                            batch_size,
+                            ctypes.byref(count),
+                            ctypes.byref(complete),
+                        )
+                    )
+                    for i in range(count.value):
+                        self._check_iteration(epoch)
+                        yield timestamps[i], values[i]
+                    if complete.value:
+                        return
+            finally:
+                if cursor:
+                    _lib.ct_cursor_state_destroy(cursor)
+
+        return iterate()
+
+    def _check_iteration(self, epoch: int) -> None:
+        if not self._handle:
+            raise ChronotailError("reader is closed")
+        if epoch != self._iteration_epoch:
+            raise ChronotailError("range iterator is stale after refresh")
 
     def aggregate(self, series: str, start: int, end: int) -> Aggregate:
         series_bytes = series.encode("utf-8")

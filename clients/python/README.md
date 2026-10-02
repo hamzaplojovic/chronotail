@@ -33,6 +33,64 @@ Writable `array('q')` and `array('d')` values use the direct buffer path.
 Readers hold immutable snapshots and adopt newer complete checkpoints only when
 `refresh()` is called.
 
+## Stream a bounded range
+
+This API targets the next additive release and is available in development
+source checkouts. The frozen 2.1.0 wheel shown above does not include it.
+Streaming also requires a native ABI-v2 library exporting all three
+`ct_cursor_state_create`, `ct_cursor_state_next`, and `ct_cursor_state_destroy`
+symbols. Earlier ABI-v2 libraries, including 2.0.0, remain usable for existing
+Python APIs; requesting `iter_range()` raises `NotImplementedError` immediately
+when this capability is incomplete. Streaming has no rescanning fallback.
+
+`Reader.iter_range(series, start, end, *, batch_size=1024)` yields individual
+`(timestamp, value)` tuples in strictly increasing timestamp order. Both bounds
+are inclusive. An existing series with no matching points, or `end < start`,
+yields nothing. A missing series raises `ChronotailError`, including for a
+reversed range. `Reader.range()` continues to return its complete list.
+
+```python
+from contextlib import closing
+
+with chronotail.Reader("metrics.ctdb") as reader:
+    with closing(reader.iter_range("cpu", 1, 1_000_000, batch_size=1379)) as points:
+        for timestamp, value in points:
+            print(timestamp, value)
+            if value > 90.0:
+                break
+```
+
+The iterator reuses two native buffers of at most `batch_size` points each;
+its memory use does not grow with the selected history. `batch_size` must be a
+positive Python integer (booleans are rejected), small enough to fit native
+buffer sizes. Invalid sizes raise `ValueError` when `iter_range()` is called;
+an allocation that cannot fit available memory can raise `MemoryError` when
+iteration starts. Accumulating results yourself, for example with `list()`,
+uses memory proportional to those results.
+
+`start` and `end` must be Python integers within signed 64-bit bounds
+(`-2**63` through `2**63 - 1`); invalid bounds raise `ValueError`. Timestamps
+remain exact integers, including values above `2**53`. Values retain their
+stored binary64 bits as Python floats, including signed zero, infinities,
+and NaNs; the binding performs no timestamp-to-float or value rounding conversion.
+
+An iterator belongs to the reader snapshot at the time `iter_range()` is
+called. Native cursor creation and reading begin on the first `next()` call,
+so native errors, including missing series, arise during iteration. Publishing
+a checkpoint does not change that snapshot. A successful `reader.refresh()`
+that returns `True` invalidates existing iterators, including unstarted ones
+and points already buffered for yielding. The next read raises
+`ChronotailError`; create a new iterator after refresh. A refresh returning
+`False`, or a failed refresh, keeps the iterator valid.
+
+Keep the reader open while iterating. Closing it makes the next iterator read
+raise `ChronotailError`. Exhaustion, a native failure, and `points.close()`
+release native cursor state. When stopping early, explicitly call
+`points.close()` or use `contextlib.closing` as above: `break` alone does not
+close a retained generator. Closing an unstarted iterator allocates no native
+cursor. Reader objects and their iterators are not safe for concurrent method
+calls; use independent readers in independent threads.
+
 Run the standard-library integration suite against a development build:
 
 ```bash
