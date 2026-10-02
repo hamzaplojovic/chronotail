@@ -174,9 +174,10 @@ pub const View = struct {
             }
             return 1;
         }
-        if (self.timestamp_codec == .raw and self.value_codec == .raw) {
-            const raw_timestamps = self.rawTimestamps() orelse return error.InvalidPage;
-            const raw_values = self.rawValues() orelse return error.InvalidPage;
+        if (self.timestamp_codec == .raw and self.value_codec == .raw) raw: {
+            // Nonmapped scratch may be unaligned; copied ranges can use cursors.
+            const raw_timestamps = self.rawTimestamps() orelse break :raw;
+            const raw_values = self.rawValues() orelse break :raw;
             var high = self.rawLowerBound(end);
             if (high < raw_timestamps.len and raw_timestamps[high] == end) high += 1;
             const count = high - index;
@@ -1032,6 +1033,36 @@ test "dense timestamp pages round trip and select exact ranges" {
     try std.testing.expectEqual(@as(usize, 3), count);
     try std.testing.expectEqualSlices(i64, &.{ 220, 230, 240 }, found_timestamps[0..count]);
     try std.testing.expectEqualSlices(f64, &.{ 22, 23, 24 }, found_values[0..count]);
+}
+
+test "unaligned raw pages copy ranges without exposing borrowed slices" {
+    var storage: [format.page_size + 1]u8 align(@alignOf(i64)) = undefined;
+    const buffer: *[format.page_size]u8 = storage[1..];
+    const encoded = try encodeWithOptions(buffer, 1, &.{ 10, 20, 30 }, &.{ 1.5, 2.5, 3.5 }, false);
+    const view = try decode(encoded.bytes, encoded.identity);
+    try std.testing.expectEqual(TimestampCodec.raw, view.timestamp_codec);
+    try std.testing.expectEqual(ValueCodec.raw, view.value_codec);
+    try std.testing.expect(view.rawTimestamps() == null);
+    try std.testing.expect(view.rawValues() == null);
+
+    // Cover truncation both at the page end and inside it, including count only.
+    for ([_]i64{ 20, 100 }) |end| {
+        const required: usize = if (end == 20) 2 else 3;
+        for (0..4) |capacity| {
+            var timestamps: [3]i64 = undefined;
+            var values: [3]f64 = undefined;
+            var points: [3]Point = undefined;
+            try std.testing.expectEqual(required, try view.rangeInto(0, end, timestamps[0..capacity], values[0..capacity]));
+            try std.testing.expectEqual(required, try view.rangePoints(0, end, points[0..capacity]));
+            const copied = @min(required, capacity);
+            try std.testing.expectEqualSlices(i64, (&[_]i64{ 10, 20, 30 })[0..copied], timestamps[0..copied]);
+            try std.testing.expectEqualSlices(f64, (&[_]f64{ 1.5, 2.5, 3.5 })[0..copied], values[0..copied]);
+            for (points[0..copied], 0..) |point, index| {
+                try std.testing.expectEqual(timestamps[index], point.timestamp);
+                try std.testing.expectEqual(values[index], point.value);
+            }
+        }
+    }
 }
 
 test "irregular timestamp pages validate order and statistics" {

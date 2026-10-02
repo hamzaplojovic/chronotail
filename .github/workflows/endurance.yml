@@ -1,0 +1,50 @@
+name: Endurance
+on:
+  schedule:
+    - cron: '17 3 * * *'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: endurance-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  simulation:
+    name: 100M fault-injected operations (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-14]
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - run: python3 scripts/setup-dev.py
+      - run: CHRONOTAIL_SIM_SEED=$((RUN_NUMBER * 1000 + 1)) ./scripts/dev.sh simulate
+        env:
+          RUN_NUMBER: ${{ github.run_number }}
+          CHRONOTAIL_SIM_SEEDS: '1000'
+          CHRONOTAIL_SIM_OPERATIONS: '100000'
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: endurance-${{ matrix.os }}
+          path: .dev-results/
+          include-hidden-files: true
+          retention-days: 30
+  profile:
+    name: Full native resource profile
+    runs-on: macos-14
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - run: test "$(uname -s)-$(uname -m)" = Darwin-arm64
+      - run: python3 scripts/setup-dev.py
+      - run: ./scripts/dev.sh profile full
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: full-resource-profile
+          path: .dev-results/
+          include-hidden-files: true
+          retention-days: 30

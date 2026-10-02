@@ -253,6 +253,9 @@ pub fn append(
     )).root;
 }
 
+/// Match writeLevel's ceil(entries / entry_capacity) grouping at each level.
+/// Each parent retains count - 1 entries and replaces its last child with the
+/// newly grouped children. More than one group above the root adds a level.
 pub fn appendedSpineDepth(spine: []const Node, new_entry_count: usize) !usize {
     if (spine.len == 0 or spine.len > height_max or new_entry_count == 0)
         return error.InvalidIndex;
@@ -685,15 +688,29 @@ test "appended spine depth grows only when parent capacity requires it" {
     };
     try std.testing.expectEqual(@as(usize, 2), try appendedSpineDepth(&.{leaf}, 1));
 
-    const root = Node{
+    var root = Node{
         .level = 1,
         .series_id = 1,
-        .count = entry_capacity,
+        .count = entry_capacity - 1,
         .summary = undefined,
     };
+    // The full leaf splits into two: (capacity - 1) - 1 + 2 fits this parent.
     try std.testing.expectEqual(
         @as(usize, 2),
         try appendedSpineDepth(&.{ root, leaf }, 1),
+    );
+    // A full parent instead needs capacity - 1 + 2 = capacity + 1 entries,
+    // so it splits into two parents and requires a new root at depth three.
+    root.count = entry_capacity;
+    try std.testing.expectEqual(
+        @as(usize, 3),
+        try appendedSpineDepth(&.{ root, leaf }, 1),
+    );
+    var leaf_with_room = leaf;
+    leaf_with_room.count -= 1;
+    try std.testing.expectEqual(
+        @as(usize, 2),
+        try appendedSpineDepth(&.{ root, leaf_with_room }, 1),
     );
     try std.testing.expectEqual(
         @as(usize, 3),

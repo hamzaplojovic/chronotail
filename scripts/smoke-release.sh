@@ -13,7 +13,8 @@ trap 'rm -rf "$work"' EXIT
 tar -xzf "$archive" -C "$work"
 release="$work/chronotail"
 export PATH="$release/bin:$PATH"
-export DYLD_LIBRARY_PATH="$release/lib${DYLD_LIBRARY_PATH:+:$DYLD_LIBRARY_PATH}"
+unset CHRONOTAIL_LIBRARY PYTHONPATH LD_LIBRARY_PATH
+export DYLD_LIBRARY_PATH="$release/lib"
 cd "$work"
 
 if [[ "$(uname -s)-$(uname -m)" != "Darwin-arm64" ]]; then
@@ -30,7 +31,10 @@ chronotail inspect metrics.ctdb | grep -q 'Chronotail v7'
 python3 -m pip install --quiet --no-index --target "$work/site" "$release"/python/*.whl
 PYTHONPATH="$work/site" python3 - <<'PY'
 from array import array
+from pathlib import Path
 import chronotail
+
+assert Path(chronotail._lib._name).resolve().parent == Path(chronotail.__file__).resolve().parent / "_native", "wheel did not load its packaged native library"
 
 with chronotail.Writer("python.ctdb", batch_size=100, codec="compressed") as db:
     db.prepare("cpu", 3)

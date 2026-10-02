@@ -1,0 +1,90 @@
+name: CI
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  hygiene:
+    name: Repository hygiene
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - run: python3 scripts/setup-dev.py
+      - name: Validate workflow definitions
+        run: |
+          source scripts/dev-env.sh
+          GOBIN="$PWD/.tools/bin" go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.7
+          .tools/bin/actionlint -shellcheck='' -pyflakes=''
+      - run: ./scripts/dev.sh lint
+  tests:
+    name: Tests (${{ matrix.os }}, ${{ matrix.mode }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-14]
+        mode: [Debug, ReleaseSafe, ReleaseFast]
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - run: python3 scripts/setup-dev.py
+      - run: ./scripts/dev.sh test '${{ matrix.mode }}'
+  integration:
+    name: Clients and resource invariants (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-14]
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - run: python3 scripts/setup-dev.py
+      - run: ./scripts/dev.sh clients
+      - run: ./scripts/dev.sh simulate
+      - run: ./scripts/dev.sh profile quick
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: evidence-${{ matrix.os }}
+          path: .dev-results/
+          include-hidden-files: true
+          retention-days: 14
+  artifacts:
+    name: Native macOS release artifacts
+    runs-on: macos-14
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - run: test "$(uname -s)-$(uname -m)" = Darwin-arm64
+      - run: python3 scripts/setup-dev.py
+      - run: source scripts/dev-env.sh && ./scripts/build-release.sh
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: macos-arm64-candidate
+          path: dist/
+          retention-days: 14
+  gate:
+    name: Required CI
+    if: always()
+    needs: [hygiene, tests, integration, artifacts]
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Require every gate
+        env:
+          HYGIENE: ${{ needs.hygiene.result }}
+          TESTS: ${{ needs.tests.result }}
+          INTEGRATION: ${{ needs.integration.result }}
+          ARTIFACTS: ${{ needs.artifacts.result }}
+        run: |
+          test "$HYGIENE" = success
+          test "$TESTS" = success
+          test "$INTEGRATION" = success
+          test "$ARTIFACTS" = success

@@ -9,6 +9,11 @@ and the API guide for the surface you plan to change.
 
 The validated development host is macOS ARM64 with Zig 0.15.2.
 
+For a reproducible workspace, run `python3 scripts/setup-dev.py`, then
+`./scripts/dev.sh quick`. The same commands drive GitHub CI and Conductor run
+buttons. See [development and maintenance](docs/development/maintenance.md) for
+full gates, specialist agents, paired profiling, endurance, and release checks.
+
 ```bash
 zig version
 zig build test

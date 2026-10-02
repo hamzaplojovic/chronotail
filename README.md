@@ -185,12 +185,24 @@ capacity planning, validation, and rollback.
 - [Optimization roadmap](docs/performance/optimization-roadmap.md)
 - [Competitive benchmark report](BENCHMARKS.md)
 - [Release notes](RELEASE_NOTES.md)
+- [Development and maintenance](docs/development/maintenance.md)
 
 The design rationale includes the TigerStyle lessons, the system-wide redesign,
 rejected alternatives, accepted tradeoffs, and the intentionally narrow seam
 for a future replication layer. Distribution is not part of this release.
 
 ## Build and verify
+
+For a reproducible workspace with pinned tools and the same checks used by CI:
+
+```bash
+./scripts/setup-dev.sh
+./scripts/dev.sh quick
+```
+
+Use `./scripts/dev.sh full` for all three test modes, client checks, the
+100-million-operation fault campaign, and the full internal resource profile.
+Native macOS ARM64 remains the release validation host.
 
 ```bash
 zig build test

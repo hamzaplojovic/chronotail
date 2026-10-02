@@ -1,0 +1,59 @@
+name: Release validation
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  release:
+    name: Validated native release bundle
+    permissions:
+      contents: write
+    runs-on: macos-14
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Validate release tag
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          python3 - <<'PY'
+          import os, pathlib, re
+          version = re.search(r'\.version\s*=\s*"([^"]+)"', pathlib.Path('build.zig.zon').read_text()).group(1)
+          assert os.environ['RELEASE_TAG'] == 'v' + version, 'tag/source version mismatch'
+          notes = pathlib.Path('RELEASE_NOTES.md').read_text().split('\n# ', 1)[0]
+          assert 'unreleased' not in notes.lower(), 'release notes still mark this version unreleased'
+          PY
+      - run: python3 scripts/setup-dev.py
+      - run: ./scripts/dev.sh release
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: validated-release
+          path: dist/
+          retention-days: 90
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: release-evidence
+          path: .dev-results/
+          include-hidden-files: true
+          retention-days: 90
+      - name: Publish the validated GitHub release
+        if: success() && github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          notes = Path('RELEASE_NOTES.md').read_text().split('\n# ', 1)[0]
+          Path('.dev-results/release-notes.md').write_text(notes.rstrip() + '\n')
+          PY
+          gh release create "$RELEASE_TAG" dist/*.tar.gz dist/SHA256SUMS \
+            --verify-tag --title "Chronotail ${RELEASE_TAG#v}" \
+            --notes-file .dev-results/release-notes.md
