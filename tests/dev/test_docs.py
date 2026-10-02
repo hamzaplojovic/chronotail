@@ -21,7 +21,7 @@ class DocsTest(unittest.TestCase):
     def setUp(self) -> None:
         self.directory = tempfile.TemporaryDirectory(prefix="chronotail-docs-", dir="/tmp")
         self.addCleanup(self.directory.cleanup)
-        self.root = Path(self.directory.name)
+        self.root = Path(self.directory.name).resolve()
 
     def write(self, name: str, text: str = "") -> Path:
         path = self.root / name
