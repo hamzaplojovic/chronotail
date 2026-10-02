@@ -32,6 +32,198 @@ pub const Point = page.Point;
 pub const LookupMode = enum { exact, predecessor, successor, nearest };
 const LookupDirection = enum { predecessor, successor };
 
+pub const ChartBucketBounds = struct { start: i64, end: i64 };
+
+pub const ChartRoles = packed struct {
+    first: bool = false,
+    minimum: bool = false,
+    maximum: bool = false,
+    last: bool = false,
+};
+
+pub const ChartBreaks = packed struct {
+    query_start: bool = false,
+    empty_bucket: bool = false,
+    excluded_interval: bool = false,
+    time_gap: bool = false,
+    nan: bool = false,
+};
+
+pub const ChartSample = struct {
+    point: Point,
+    roles: ChartRoles,
+    break_before: ChartBreaks,
+};
+
+pub const ChartBucket = struct {
+    stored_count: u64 = 0,
+    numeric_count: u64 = 0,
+    sample_count: u8 = 0,
+    samples: [4]ChartSample = undefined,
+    has_nan: bool = false,
+    has_internal_time_gap: bool = false,
+};
+
+pub const ChartProgress = struct {
+    required_buckets: usize,
+    written_buckets: usize,
+    complete: bool,
+};
+
+fn chartIsNan(value: f64) bool {
+    const bits: u64 = @bitCast(value);
+    return bits & 0x7ff0000000000000 == 0x7ff0000000000000 and
+        bits & 0x000fffffffffffff != 0;
+}
+
+const ChartCandidate = struct {
+    point: Point,
+    nan_prefix: u64,
+    gap_prefix: u64,
+};
+
+// Private source-test accounting: records, not scalar decoder instructions.
+// Page validation and selection are distinct passes; no timing/public API.
+const ChartWork = struct {
+    index_visits: u64 = 0,
+    page_loads: u64 = 0,
+    authenticated_bytes: u64 = 0,
+    validation_records: u64 = 0,
+    selection_records: u64 = 0,
+    emitted_points: u64 = 0,
+};
+
+const ChartReduction = struct {
+    bounds: []const ChartBucketBounds,
+    output: []ChartBucket,
+    max_gap: ?u64,
+    bucket_index: usize = 0,
+    bucket: ChartBucket = .{},
+    // Role order is first/minimum/maximum/last, not chronological order.
+    candidates: [4]?ChartCandidate = .{ null, null, null, null },
+    observed_timestamp: ?i64 = null,
+    nan_prefix: u64 = 0,
+    gap_prefix: u64 = 0,
+    emitted: ?ChartCandidate = null,
+    pending_empty: bool = false,
+    pending_excluded: bool = false,
+
+    fn advanceBefore(self: *ChartReduction, timestamp: i64) !void {
+        while (self.bucket_index < self.bounds.len and
+            self.bounds[self.bucket_index].end < timestamp) try self.finishBucket();
+    }
+
+    fn observe(self: *ChartReduction, point: Point) !void {
+        const is_nan = chartIsNan(point.value);
+        if (is_nan) {
+            self.nan_prefix = std.math.add(u64, self.nan_prefix, 1) catch return error.DatabaseTooLarge;
+            self.bucket.has_nan = true;
+        }
+        if (self.observed_timestamp) |previous| {
+            if (self.max_gap) |limit| if (timestampDistance(point.timestamp, previous) > limit) {
+                self.gap_prefix = std.math.add(u64, self.gap_prefix, 1) catch return error.DatabaseTooLarge;
+                // A cross-bucket original pair is a connection event only.
+                if (self.bucket.stored_count != 0) self.bucket.has_internal_time_gap = true;
+            };
+        }
+        self.observed_timestamp = point.timestamp;
+        const candidate = ChartCandidate{
+            .point = point,
+            .nan_prefix = self.nan_prefix,
+            .gap_prefix = self.gap_prefix,
+        };
+        self.bucket.stored_count = std.math.add(u64, self.bucket.stored_count, 1) catch return error.DatabaseTooLarge;
+        if (self.candidates[0] == null) self.candidates[0] = candidate;
+        self.candidates[3] = candidate;
+        if (!is_nan) {
+            self.bucket.numeric_count = std.math.add(u64, self.bucket.numeric_count, 1) catch return error.DatabaseTooLarge;
+            // Strict updates preserve earliest numeric ties, including zero bits.
+            if (self.candidates[1] == null or point.value < self.candidates[1].?.point.value)
+                self.candidates[1] = candidate;
+            if (self.candidates[2] == null or point.value > self.candidates[2].?.point.value)
+                self.candidates[2] = candidate;
+        }
+    }
+
+    fn finishBucket(self: *ChartReduction) !void {
+        var ordered: [4]struct { candidate: ChartCandidate, roles: ChartRoles } = undefined;
+        var count: usize = 0;
+        for (self.candidates, 0..) |maybe_candidate, role| {
+            const candidate = maybe_candidate orelse continue;
+            var position: usize = 0;
+            while (position < count and ordered[position].candidate.point.timestamp < candidate.point.timestamp)
+                position += 1;
+            if (position == count or ordered[position].candidate.point.timestamp != candidate.point.timestamp) {
+                var move = count;
+                while (move > position) : (move -= 1) ordered[move] = ordered[move - 1];
+                ordered[position] = .{ .candidate = candidate, .roles = .{} };
+                count += 1;
+            }
+            switch (role) {
+                0 => ordered[position].roles.first = true,
+                1 => ordered[position].roles.minimum = true,
+                2 => ordered[position].roles.maximum = true,
+                3 => ordered[position].roles.last = true,
+                else => unreachable,
+            }
+        }
+        for (ordered[0..count], 0..) |selected, sample_index| {
+            const candidate = selected.candidate;
+            const breaks: ChartBreaks = if (self.emitted) |previous| .{
+                .empty_bucket = self.pending_empty,
+                .excluded_interval = self.pending_excluded,
+                .time_gap = candidate.gap_prefix > previous.gap_prefix,
+                .nan = chartIsNan(previous.point.value) or candidate.nan_prefix > previous.nan_prefix,
+            } else .{
+                .query_start = true,
+                .nan = chartIsNan(candidate.point.value),
+            };
+            self.bucket.samples[sample_index] = .{
+                .point = candidate.point,
+                .roles = selected.roles,
+                .break_before = breaks,
+            };
+            self.emitted = candidate;
+            self.pending_empty = false;
+            self.pending_excluded = false;
+        }
+        self.bucket.sample_count = @intCast(count);
+        self.output[self.bucket_index] = self.bucket;
+        if (count == 0) self.pending_empty = true;
+        const previous_end = self.bounds[self.bucket_index].end;
+        self.bucket_index += 1;
+        if (self.bucket_index < self.bounds.len and
+            @as(i128, self.bounds[self.bucket_index].start) != @as(i128, previous_end) + 1)
+        {
+            self.pending_excluded = true;
+            self.observed_timestamp = null;
+        }
+        self.bucket = .{};
+        self.candidates = .{ null, null, null, null };
+    }
+};
+
+// One live pair of byte cursors, shared by mapped/generic and unaligned tests.
+fn chartSelectPage(
+    view: page.View,
+    reduction: *ChartReduction,
+    comptime measured: bool,
+    work: if (measured) *ChartWork else void,
+) !void {
+    // Start at zero: no hidden restart-prefix decodes. Page geometry bounds
+    // outside-coverage decoding; omitted values never enter event state.
+    var timestamps = view.timestampCursor(0);
+    var values = view.valueCursor(0);
+    var point_index: u32 = 0;
+    while (point_index < view.statistics.count) : (point_index += 1) {
+        const point = Point{ .timestamp = timestamps.next(), .value = values.next() };
+        if (measured) work.selection_records += 1;
+        try reduction.advanceBefore(point.timestamp);
+        if (reduction.bucket_index == reduction.bounds.len) break;
+        if (point.timestamp >= reduction.bounds[reduction.bucket_index].start) try reduction.observe(point);
+    }
+}
+
 fn timestampDistance(a: i64, b: i64) u64 {
     const difference = @as(i128, a) - @as(i128, b);
     return @intCast(if (difference < 0) -difference else difference);
@@ -1240,6 +1432,153 @@ pub fn ReaderFor(comptime File: type) type {
                 node = child;
                 depth += 1;
             }
+        }
+
+        /// Copy original chart-envelope samples into one complete slot per bound.
+        /// Insufficient capacity writes nothing and does not inspect history.
+        pub fn envelopeInto(
+            self: *Self,
+            name: []const u8,
+            bounds: []const ChartBucketBounds,
+            max_gap: ?u64,
+            output: []ChartBucket,
+        ) !ChartProgress {
+            return self.envelopePreparedInto(try self.prepare(name), bounds, max_gap, output);
+        }
+
+        pub fn envelopePreparedInto(
+            self: *Self,
+            handle: SeriesHandle,
+            bounds: []const ChartBucketBounds,
+            max_gap: ?u64,
+            output: []ChartBucket,
+        ) !ChartProgress {
+            return self.envelopePreparedInternal(false, handle, bounds, max_gap, output, {});
+        }
+
+        fn envelopePreparedInternal(
+            self: *Self,
+            comptime measured: bool,
+            handle: SeriesHandle,
+            bounds: []const ChartBucketBounds,
+            max_gap: ?u64,
+            output: []ChartBucket,
+            work: if (measured) *ChartWork else void,
+        ) !ChartProgress {
+            const series_entry = try self.resolve(handle);
+            for (bounds, 0..) |bound, bound_index| {
+                if (bound.start > bound.end or
+                    (bound_index > 0 and bounds[bound_index - 1].end >= bound.start))
+                    return error.InvalidArguments;
+            }
+            if (output.len < bounds.len) return .{
+                .required_buckets = bounds.len,
+                .written_buckets = 0,
+                .complete = false,
+            };
+            if (bounds.len != 0) {
+                if (comptime File == std.fs.File) {
+                    if (self.mapping != null) {
+                        try self.envelopeScan(true, measured, handle.index, series_entry, bounds, max_gap, output, work);
+                    } else {
+                        try self.envelopeScan(false, measured, handle.index, series_entry, bounds, max_gap, output, work);
+                    }
+                } else {
+                    try self.envelopeScan(false, measured, handle.index, series_entry, bounds, max_gap, output, work);
+                }
+            }
+            return .{
+                .required_buckets = bounds.len,
+                .written_buckets = bounds.len,
+                .complete = true,
+            };
+        }
+
+        fn envelopeScan(
+            self: *Self,
+            comptime mapped: bool,
+            comptime measured: bool,
+            series_index: u32,
+            series_entry: *const manifest.Series,
+            bounds: []const ChartBucketBounds,
+            max_gap: ?u64,
+            output: []ChartBucket,
+            work: if (measured) *ChartWork else void,
+        ) !void {
+            const Node = if (mapped) index.View else index.Node;
+            var frames: [index.height_max]struct { node: Node, next: u16 } = undefined;
+            const runtime = &self.series_runtime.items[series_index];
+            if (measured) {
+                work.index_visits += 1;
+                const cached = if (mapped) runtime.root != null or self.cacheContains(series_entry.root) else false;
+                if (!cached) work.authenticated_bytes += format.index_node_size;
+            }
+            const root = if (mapped)
+                try self.loadSeriesRoot(runtime, series_entry)
+            else
+                try self.loadNode(series_entry.root);
+            if (root.series_id != series_entry.id or
+                !summaryEqual(root.summary, series_entry.summary)) return error.InvalidDatabase;
+            frames[0] = .{ .node = root, .next = root.lowerBound(bounds[0].start) };
+            var depth: usize = 1;
+            var scratch: if (mapped) void else [format.page_size]u8 = undefined;
+            var reduction = ChartReduction{ .bounds = bounds, .output = output, .max_gap = max_gap };
+            while (depth > 0 and reduction.bucket_index < bounds.len) {
+                const frame = &frames[depth - 1];
+                if (frame.next == frame.node.count) {
+                    depth -= 1;
+                    continue;
+                }
+                const entry = lookupEntryAt(&frame.node, frame.next);
+                frame.next += 1;
+                try reduction.advanceBefore(entry.summary.timestamp_min);
+                if (reduction.bucket_index == bounds.len) break;
+                // Disjoint authenticated timestamp coverage cannot contribute.
+                if (entry.summary.timestamp_max < bounds[reduction.bucket_index].start) continue;
+                if (frame.node.level != 0) {
+                    if (depth == frames.len) return error.InvalidDatabase;
+                    if (measured) {
+                        work.index_visits += 1;
+                        const cached = if (mapped) self.cacheContains(entry.pointer) else false;
+                        if (!cached) work.authenticated_bytes += format.index_node_size;
+                    }
+                    const child = if (mapped)
+                        try self.loadMappedIndex(entry.pointer)
+                    else
+                        try self.loadNode(entry.pointer);
+                    if (child.series_id != series_entry.id or child.level + 1 != frame.node.level or
+                        !summaryEqual(child.summary, entry.summary)) return error.InvalidDatabase;
+                    frames[depth] = .{
+                        .node = child,
+                        .next = child.lowerBound(bounds[reduction.bucket_index].start),
+                    };
+                    depth += 1;
+                    continue;
+                }
+                const known_page = if (mapped)
+                    (if (runtime.active_page) |cached| pointerEqual(cached.pointer, entry.pointer) else false) or
+                        self.cacheContains(entry.pointer)
+                else
+                    false;
+                const view = if (mapped)
+                    try self.loadSeriesPage(runtime, series_entry.id, entry)
+                else
+                    try self.loadPage(entry.pointer, &scratch);
+                if (view.series_id != series_entry.id or
+                    !summaryEqual(index.Summary.fromPage(view.statistics), entry.summary)) return error.InvalidDatabase;
+                if (measured) {
+                    work.page_loads += 1;
+                    if (!known_page) {
+                        work.authenticated_bytes += entry.pointer.size;
+                        work.validation_records += view.statistics.count;
+                    }
+                }
+                try chartSelectPage(view, &reduction, measured, work);
+            }
+            while (reduction.bucket_index < bounds.len) try reduction.finishBucket();
+            if (measured) for (output[0..bounds.len]) |bucket| {
+                work.emitted_points += bucket.sample_count;
+            };
         }
 
         pub fn codecCounts(self: *Self, name: []const u8) ![2]usize {
@@ -3084,5 +3423,887 @@ test "mapped cached page matching edges preserve bounded allocation-free reads" 
         try std.testing.expectEqual(@as(f64, 3), values[0]);
         try std.testing.expectEqual(@as(usize, 0), try reader.cursorNext(&cursor, &timestamps, &values));
         try std.testing.expect(!allocations.has_induced_failure);
+    }
+}
+
+// Independent materialized reference: rank whole numeric lists, then inspect
+// original queried connections. Never reuse the reducer or its event counters.
+fn chartReference(
+    allocator: std.mem.Allocator,
+    points: []const Point,
+    bounds: []const ChartBucketBounds,
+    max_gap: ?u64,
+    output: []ChartBucket,
+) !void {
+    const Observed = struct { point: Point, bucket: usize, component: usize };
+    var observed: std.ArrayList(Observed) = .empty;
+    defer observed.deinit(allocator);
+    var component: usize = 0;
+    for (bounds, 0..) |bound, bucket_index| {
+        if (bucket_index > 0 and
+            @as(i128, bound.start) != @as(i128, bounds[bucket_index - 1].end) + 1) component += 1;
+        for (points) |point| if (point.timestamp >= bound.start and point.timestamp <= bound.end) {
+            try observed.append(allocator, .{ .point = point, .bucket = bucket_index, .component = component });
+        };
+    }
+    const numeric = try allocator.alloc(usize, observed.items.len);
+    defer allocator.free(numeric);
+    const Rank = struct {
+        observed: []const Observed,
+        descending: bool,
+        fn lessThan(self: @This(), a: usize, b: usize) bool {
+            const left = self.observed[a].point;
+            const right = self.observed[b].point;
+            if (left.value == right.value) return left.timestamp < right.timestamp;
+            return if (self.descending) left.value > right.value else left.value < right.value;
+        }
+    };
+    var offset: usize = 0;
+    var previous_selected: ?usize = null;
+    for (bounds, 0..) |_, bucket_index| {
+        const begin = offset;
+        while (offset < observed.items.len and observed.items[offset].bucket == bucket_index) offset += 1;
+        var bucket = ChartBucket{};
+        bucket.stored_count = @intCast(offset - begin);
+        var numeric_count: usize = 0;
+        for (begin..offset) |original_index| {
+            const point = observed.items[original_index].point;
+            if (chartReferenceNan(point.value)) {
+                bucket.has_nan = true;
+            } else {
+                numeric[numeric_count] = original_index;
+                numeric_count += 1;
+            }
+            if (max_gap) |limit| {
+                if (original_index > begin and
+                    @as(i128, point.timestamp) - @as(i128, observed.items[original_index - 1].point.timestamp) > limit)
+                    bucket.has_internal_time_gap = true;
+            }
+        }
+        bucket.numeric_count = @intCast(numeric_count);
+        if (begin == offset) {
+            output[bucket_index] = bucket;
+            continue;
+        }
+        var role_indices: [4]?usize = .{ begin, null, null, offset - 1 };
+        if (numeric_count != 0) {
+            std.mem.sort(usize, numeric[0..numeric_count], Rank{ .observed = observed.items, .descending = false }, Rank.lessThan);
+            role_indices[1] = numeric[0];
+            std.mem.sort(usize, numeric[0..numeric_count], Rank{ .observed = observed.items, .descending = true }, Rank.lessThan);
+            role_indices[2] = numeric[0];
+        }
+        // Whole identity set sorted independently of role order.
+        var identities: [4]usize = undefined;
+        var identity_count: usize = 0;
+        for (role_indices) |maybe_index| if (maybe_index) |original_index| {
+            identities[identity_count] = original_index;
+            identity_count += 1;
+        };
+        std.mem.sort(usize, identities[0..identity_count], {}, std.sort.asc(usize));
+        for (identities[0..identity_count], 0..) |original_index, sorted_index| {
+            if (sorted_index > 0 and identities[sorted_index - 1] == original_index) continue;
+            const point = observed.items[original_index].point;
+            var breaks = ChartBreaks{};
+            if (previous_selected) |previous| {
+                const previous_bucket = observed.items[previous].bucket;
+                if (previous_bucket < bucket_index) for (previous_bucket + 1..bucket_index) |between| {
+                    if (output[between].stored_count == 0) breaks.empty_bucket = true;
+                };
+                breaks.excluded_interval = observed.items[previous].component != observed.items[original_index].component;
+                for (previous..original_index + 1) |between| {
+                    if (chartReferenceNan(observed.items[between].point.value)) breaks.nan = true;
+                    if (max_gap) |limit| {
+                        if (between > previous and
+                            observed.items[between - 1].component == observed.items[between].component and
+                            @as(i128, observed.items[between].point.timestamp) -
+                                @as(i128, observed.items[between - 1].point.timestamp) > limit) breaks.time_gap = true;
+                    }
+                }
+            } else {
+                breaks.query_start = true;
+                breaks.nan = chartReferenceNan(point.value);
+            }
+            bucket.samples[bucket.sample_count] = .{
+                .point = point,
+                .roles = .{
+                    .first = role_indices[0] == original_index,
+                    .minimum = role_indices[1] == original_index,
+                    .maximum = role_indices[2] == original_index,
+                    .last = role_indices[3] == original_index,
+                },
+                .break_before = breaks,
+            };
+            bucket.sample_count += 1;
+            previous_selected = original_index;
+        }
+        output[bucket_index] = bucket;
+    }
+}
+
+fn chartReferenceNan(value: f64) bool {
+    const bits: u64 = @bitCast(value);
+    return ((bits >> 52) & 2047) == 2047 and (bits & ((@as(u64, 1) << 52) - 1)) != 0;
+}
+
+fn expectChartBucket(expected: ChartBucket, actual: ChartBucket) !void {
+    try std.testing.expectEqual(expected.stored_count, actual.stored_count);
+    try std.testing.expectEqual(expected.numeric_count, actual.numeric_count);
+    try std.testing.expectEqual(expected.sample_count, actual.sample_count);
+    try std.testing.expectEqual(expected.has_nan, actual.has_nan);
+    try std.testing.expectEqual(expected.has_internal_time_gap, actual.has_internal_time_gap);
+    for (expected.samples[0..expected.sample_count], actual.samples[0..actual.sample_count]) |left, right| {
+        try std.testing.expectEqual(left.point.timestamp, right.point.timestamp);
+        try std.testing.expectEqual(@as(u64, @bitCast(left.point.value)), @as(u64, @bitCast(right.point.value)));
+        try std.testing.expect(std.meta.eql(left.roles, right.roles));
+        try std.testing.expect(std.meta.eql(left.break_before, right.break_before));
+    }
+}
+
+fn chartSentinel() ChartBucket {
+    return .{
+        .stored_count = 123456,
+        .numeric_count = 234567,
+        .sample_count = 4,
+        .has_nan = true,
+        .has_internal_time_gap = true,
+        .samples = [_]ChartSample{.{
+            .point = .{ .timestamp = -345678, .value = @bitCast(@as(u64, 0xfff800000000abcd)) },
+            .roles = .{ .maximum = true },
+            .break_before = .{ .excluded_interval = true },
+        }} ** 4,
+    };
+}
+
+// Refuse and count every allocation/resize/remap attempt after open/prepare.
+const ChartTestAllocator = struct {
+    inner: std.mem.Allocator = std.testing.allocator,
+    locked: bool = false,
+    alloc_attempts: usize = 0,
+    resize_attempts: usize = 0,
+    remap_attempts: usize = 0,
+    frees: usize = 0,
+
+    fn allocator(self: *@This()) std.mem.Allocator {
+        return .{ .ptr = self, .vtable = &.{ .alloc = alloc, .resize = resize, .remap = remap, .free = free } };
+    }
+    fn alloc(context: *anyopaque, len: usize, alignment: std.mem.Alignment, return_address: usize) ?[*]u8 {
+        const self: *@This() = @ptrCast(@alignCast(context));
+        self.alloc_attempts += 1;
+        if (self.locked) return null;
+        return self.inner.rawAlloc(len, alignment, return_address);
+    }
+    fn resize(context: *anyopaque, bytes: []u8, alignment: std.mem.Alignment, len: usize, return_address: usize) bool {
+        const self: *@This() = @ptrCast(@alignCast(context));
+        self.resize_attempts += 1;
+        if (self.locked) return false;
+        return self.inner.rawResize(bytes, alignment, len, return_address);
+    }
+    fn remap(context: *anyopaque, bytes: []u8, alignment: std.mem.Alignment, len: usize, return_address: usize) ?[*]u8 {
+        const self: *@This() = @ptrCast(@alignCast(context));
+        self.remap_attempts += 1;
+        if (self.locked) return null;
+        return self.inner.rawRemap(bytes, alignment, len, return_address);
+    }
+    fn free(context: *anyopaque, bytes: []u8, alignment: std.mem.Alignment, return_address: usize) void {
+        const self: *@This() = @ptrCast(@alignCast(context));
+        self.frees += 1;
+        self.inner.rawFree(bytes, alignment, return_address);
+    }
+};
+
+const ChartTestIo = struct {
+    offsets: [256]u64 = undefined,
+    count: usize = 0,
+    bytes: u64 = 0,
+    revisits: usize = 0,
+};
+
+const ChartTestFile = struct {
+    file: std.fs.File,
+    io: *ChartTestIo,
+
+    pub fn getEndPos(self: @This()) !u64 {
+        return self.file.getEndPos();
+    }
+    pub fn preadAll(self: @This(), bytes: []u8, offset: u64) !usize {
+        if (self.io.count == self.io.offsets.len) return error.ExcessiveChartReads;
+        for (self.io.offsets[0..self.io.count]) |previous| if (previous == offset) {
+            self.io.revisits += 1;
+            break;
+        };
+        self.io.offsets[self.io.count] = offset;
+        self.io.count += 1;
+        self.io.bytes += bytes.len;
+        return self.file.preadAll(bytes, offset);
+    }
+    pub fn close(self: @This()) void {
+        self.file.close();
+    }
+};
+
+// Literal expectations transcribed from frozen CT-006 materialized oracle.
+// Fixture SHA256 de114d2e76567094f333f63e9cffb6193e6df086022e588e0b6b6e8c2ff5d732.
+const ChartOracleFixture = struct { points: []const Point, bounds: []const ChartBucketBounds, max_gap: ?u64, expected: []const ChartBucket };
+const chart_oracle_fixtures = [_]ChartOracleFixture{
+    // omitted-interval-absent
+    .{
+        .points = &.{ .{ .timestamp = 0, .value = @bitCast(@as(u64, 0x3ff0000000000000)) }, .{ .timestamp = 10, .value = @bitCast(@as(u64, 0x4000000000000000)) } },
+        .bounds = &.{ .{ .start = 0, .end = 0 }, .{ .start = 10, .end = 10 } },
+        .max_gap = 6,
+        .expected = &.{
+            .{ .stored_count = 1, .numeric_count = 1, .sample_count = 1, .has_nan = false, .has_internal_time_gap = false, .samples = .{ .{ .point = .{ .timestamp = 0, .value = @bitCast(@as(u64, 0x3ff0000000000000)) }, .roles = .{ .first = true, .last = true, .maximum = true, .minimum = true }, .break_before = .{ .query_start = true } }, undefined, undefined, undefined } },
+            .{ .stored_count = 1, .numeric_count = 1, .sample_count = 1, .has_nan = false, .has_internal_time_gap = false, .samples = .{ .{ .point = .{ .timestamp = 10, .value = @bitCast(@as(u64, 0x4000000000000000)) }, .roles = .{ .first = true, .last = true, .maximum = true, .minimum = true }, .break_before = .{ .excluded_interval = true } }, undefined, undefined, undefined } },
+        },
+    },
+    // omitted-interval-bridge
+    .{
+        .points = &.{ .{ .timestamp = 0, .value = @bitCast(@as(u64, 0x3ff0000000000000)) }, .{ .timestamp = 5, .value = @bitCast(@as(u64, 0x4058c00000000000)) }, .{ .timestamp = 10, .value = @bitCast(@as(u64, 0x4000000000000000)) } },
+        .bounds = &.{ .{ .start = 0, .end = 0 }, .{ .start = 10, .end = 10 } },
+        .max_gap = 6,
+        .expected = &.{
+            .{ .stored_count = 1, .numeric_count = 1, .sample_count = 1, .has_nan = false, .has_internal_time_gap = false, .samples = .{ .{ .point = .{ .timestamp = 0, .value = @bitCast(@as(u64, 0x3ff0000000000000)) }, .roles = .{ .first = true, .last = true, .maximum = true, .minimum = true }, .break_before = .{ .query_start = true } }, undefined, undefined, undefined } },
+            .{ .stored_count = 1, .numeric_count = 1, .sample_count = 1, .has_nan = false, .has_internal_time_gap = false, .samples = .{ .{ .point = .{ .timestamp = 10, .value = @bitCast(@as(u64, 0x4000000000000000)) }, .roles = .{ .first = true, .last = true, .maximum = true, .minimum = true }, .break_before = .{ .excluded_interval = true } }, undefined, undefined, undefined } },
+        },
+    },
+    // omitted-interval-nan
+    .{
+        .points = &.{ .{ .timestamp = 0, .value = @bitCast(@as(u64, 0x3ff0000000000000)) }, .{ .timestamp = 5, .value = @bitCast(@as(u64, 0x7ff0000000000011)) }, .{ .timestamp = 10, .value = @bitCast(@as(u64, 0x4000000000000000)) } },
+        .bounds = &.{ .{ .start = 0, .end = 0 }, .{ .start = 10, .end = 10 } },
+        .max_gap = 6,
+        .expected = &.{
+            .{ .stored_count = 1, .numeric_count = 1, .sample_count = 1, .has_nan = false, .has_internal_time_gap = false, .samples = .{ .{ .point = .{ .timestamp = 0, .value = @bitCast(@as(u64, 0x3ff0000000000000)) }, .roles = .{ .first = true, .last = true, .maximum = true, .minimum = true }, .break_before = .{ .query_start = true } }, undefined, undefined, undefined } },
+            .{ .stored_count = 1, .numeric_count = 1, .sample_count = 1, .has_nan = false, .has_internal_time_gap = false, .samples = .{ .{ .point = .{ .timestamp = 10, .value = @bitCast(@as(u64, 0x4000000000000000)) }, .roles = .{ .first = true, .last = true, .maximum = true, .minimum = true }, .break_before = .{ .excluded_interval = true } }, undefined, undefined, undefined } },
+        },
+    },
+    // contiguous-empty-proven-gap
+    .{
+        .points = &.{ .{ .timestamp = 0, .value = @bitCast(@as(u64, 0x3ff0000000000000)) }, .{ .timestamp = 10, .value = @bitCast(@as(u64, 0x4000000000000000)) } },
+        .bounds = &.{ .{ .start = 0, .end = 0 }, .{ .start = 1, .end = 9 }, .{ .start = 10, .end = 10 } },
+        .max_gap = 9,
+        .expected = &.{
+            .{ .stored_count = 1, .numeric_count = 1, .sample_count = 1, .has_nan = false, .has_internal_time_gap = false, .samples = .{ .{ .point = .{ .timestamp = 0, .value = @bitCast(@as(u64, 0x3ff0000000000000)) }, .roles = .{ .first = true, .last = true, .maximum = true, .minimum = true }, .break_before = .{ .query_start = true } }, undefined, undefined, undefined } },
+            .{ .stored_count = 0, .numeric_count = 0, .sample_count = 0, .has_nan = false, .has_internal_time_gap = false, .samples = .{ undefined, undefined, undefined, undefined } },
+            .{ .stored_count = 1, .numeric_count = 1, .sample_count = 1, .has_nan = false, .has_internal_time_gap = false, .samples = .{ .{ .point = .{ .timestamp = 10, .value = @bitCast(@as(u64, 0x4000000000000000)) }, .roles = .{ .first = true, .last = true, .maximum = true, .minimum = true }, .break_before = .{ .empty_bucket = true, .time_gap = true } }, undefined, undefined, undefined } },
+        },
+    },
+    // dense-reduced-chord
+    .{
+        .points = &.{ .{ .timestamp = 0, .value = @bitCast(@as(u64, 0x0000000000000000)) }, .{ .timestamp = 1, .value = @bitCast(@as(u64, 0x0000000000000000)) }, .{ .timestamp = 2, .value = @bitCast(@as(u64, 0x0000000000000000)) }, .{ .timestamp = 3, .value = @bitCast(@as(u64, 0x0000000000000000)) }, .{ .timestamp = 4, .value = @bitCast(@as(u64, 0x0000000000000000)) }, .{ .timestamp = 5, .value = @bitCast(@as(u64, 0x0000000000000000)) }, .{ .timestamp = 6, .value = @bitCast(@as(u64, 0x0000000000000000)) }, .{ .timestamp = 7, .value = @bitCast(@as(u64, 0x0000000000000000)) }, .{ .timestamp = 8, .value = @bitCast(@as(u64, 0x0000000000000000)) }, .{ .timestamp = 9, .value = @bitCast(@as(u64, 0x0000000000000000)) }, .{ .timestamp = 10, .value = @bitCast(@as(u64, 0x0000000000000000)) } },
+        .bounds = &.{.{ .start = 0, .end = 10 }},
+        .max_gap = 1,
+        .expected = &.{
+            .{ .stored_count = 11, .numeric_count = 11, .sample_count = 2, .has_nan = false, .has_internal_time_gap = false, .samples = .{ .{ .point = .{ .timestamp = 0, .value = @bitCast(@as(u64, 0x0000000000000000)) }, .roles = .{ .first = true, .maximum = true, .minimum = true }, .break_before = .{ .query_start = true } }, .{ .point = .{ .timestamp = 10, .value = @bitCast(@as(u64, 0x0000000000000000)) }, .roles = .{ .last = true }, .break_before = .{} }, undefined, undefined } },
+        },
+    },
+    // full-i64-gap-18446744073709551615
+    .{
+        .points = &.{ .{ .timestamp = -9223372036854775808, .value = @bitCast(@as(u64, 0x8000000000000000)) }, .{ .timestamp = 9223372036854775807, .value = @bitCast(@as(u64, 0x7ff0000000000011)) } },
+        .bounds = &.{.{ .start = -9223372036854775808, .end = 9223372036854775807 }},
+        .max_gap = 18446744073709551615,
+        .expected = &.{
+            .{ .stored_count = 2, .numeric_count = 1, .sample_count = 2, .has_nan = true, .has_internal_time_gap = false, .samples = .{ .{ .point = .{ .timestamp = -9223372036854775808, .value = @bitCast(@as(u64, 0x8000000000000000)) }, .roles = .{ .first = true, .maximum = true, .minimum = true }, .break_before = .{ .query_start = true } }, .{ .point = .{ .timestamp = 9223372036854775807, .value = @bitCast(@as(u64, 0x7ff0000000000011)) }, .roles = .{ .last = true }, .break_before = .{ .nan = true } }, undefined, undefined } },
+        },
+    },
+    // full-i64-gap-18446744073709551614
+    .{
+        .points = &.{ .{ .timestamp = -9223372036854775808, .value = @bitCast(@as(u64, 0x8000000000000000)) }, .{ .timestamp = 9223372036854775807, .value = @bitCast(@as(u64, 0x7ff0000000000011)) } },
+        .bounds = &.{.{ .start = -9223372036854775808, .end = 9223372036854775807 }},
+        .max_gap = 18446744073709551614,
+        .expected = &.{
+            .{ .stored_count = 2, .numeric_count = 1, .sample_count = 2, .has_nan = true, .has_internal_time_gap = true, .samples = .{ .{ .point = .{ .timestamp = -9223372036854775808, .value = @bitCast(@as(u64, 0x8000000000000000)) }, .roles = .{ .first = true, .maximum = true, .minimum = true }, .break_before = .{ .query_start = true } }, .{ .point = .{ .timestamp = 9223372036854775807, .value = @bitCast(@as(u64, 0x7ff0000000000011)) }, .roles = .{ .last = true }, .break_before = .{ .nan = true, .time_gap = true } }, undefined, undefined } },
+        },
+    },
+    // interior-spikes-nan-gap
+    .{
+        .points = &.{ .{ .timestamp = 0, .value = @bitCast(@as(u64, 0x0000000000000000)) }, .{ .timestamp = 1, .value = @bitCast(@as(u64, 0x4059000000000000)) }, .{ .timestamp = 2, .value = @bitCast(@as(u64, 0xfff8000000000456)) }, .{ .timestamp = 10, .value = @bitCast(@as(u64, 0x4014000000000000)) }, .{ .timestamp = 11, .value = @bitCast(@as(u64, 0xc059000000000000)) }, .{ .timestamp = 12, .value = @bitCast(@as(u64, 0x0000000000000000)) } },
+        .bounds = &.{.{ .start = 0, .end = 12 }},
+        .max_gap = 3,
+        .expected = &.{
+            .{ .stored_count = 6, .numeric_count = 5, .sample_count = 4, .has_nan = true, .has_internal_time_gap = true, .samples = .{ .{ .point = .{ .timestamp = 0, .value = @bitCast(@as(u64, 0x0000000000000000)) }, .roles = .{ .first = true }, .break_before = .{ .query_start = true } }, .{ .point = .{ .timestamp = 1, .value = @bitCast(@as(u64, 0x4059000000000000)) }, .roles = .{ .maximum = true }, .break_before = .{} }, .{ .point = .{ .timestamp = 11, .value = @bitCast(@as(u64, 0xc059000000000000)) }, .roles = .{ .minimum = true }, .break_before = .{ .nan = true, .time_gap = true } }, .{ .point = .{ .timestamp = 12, .value = @bitCast(@as(u64, 0x0000000000000000)) }, .roles = .{ .last = true }, .break_before = .{} } } },
+        },
+    },
+    // zero-nan-empty
+    .{
+        .points = &.{ .{ .timestamp = 0, .value = @bitCast(@as(u64, 0x8000000000000000)) }, .{ .timestamp = 1, .value = @bitCast(@as(u64, 0x0000000000000000)) }, .{ .timestamp = 2, .value = @bitCast(@as(u64, 0x7ff8000000000123)) }, .{ .timestamp = 3, .value = @bitCast(@as(u64, 0x7ff0000000000011)) } },
+        .bounds = &.{ .{ .start = 0, .end = 1 }, .{ .start = 2, .end = 3 }, .{ .start = 4, .end = 4 } },
+        .max_gap = null,
+        .expected = &.{
+            .{ .stored_count = 2, .numeric_count = 2, .sample_count = 2, .has_nan = false, .has_internal_time_gap = false, .samples = .{ .{ .point = .{ .timestamp = 0, .value = @bitCast(@as(u64, 0x8000000000000000)) }, .roles = .{ .first = true, .maximum = true, .minimum = true }, .break_before = .{ .query_start = true } }, .{ .point = .{ .timestamp = 1, .value = @bitCast(@as(u64, 0x0000000000000000)) }, .roles = .{ .last = true }, .break_before = .{} }, undefined, undefined } },
+            .{ .stored_count = 2, .numeric_count = 0, .sample_count = 2, .has_nan = true, .has_internal_time_gap = false, .samples = .{ .{ .point = .{ .timestamp = 2, .value = @bitCast(@as(u64, 0x7ff8000000000123)) }, .roles = .{ .first = true }, .break_before = .{ .nan = true } }, .{ .point = .{ .timestamp = 3, .value = @bitCast(@as(u64, 0x7ff0000000000011)) }, .roles = .{ .last = true }, .break_before = .{ .nan = true } }, undefined, undefined } },
+            .{ .stored_count = 0, .numeric_count = 0, .sample_count = 0, .has_nan = false, .has_internal_time_gap = false, .samples = .{ undefined, undefined, undefined, undefined } },
+        },
+    },
+};
+
+test "chart envelope independent oracle and 3906 exhaustive short histories" {
+    for (chart_oracle_fixtures) |fixture| {
+        var reference: [3]ChartBucket = undefined;
+        try chartReference(std.testing.allocator, fixture.points, fixture.bounds, fixture.max_gap, reference[0..fixture.bounds.len]);
+        for (fixture.expected, reference[0..fixture.bounds.len]) |expected, actual| try expectChartBucket(expected, actual);
+    }
+    const value_bits = [_]u64{ 0, 0x8000000000000000, 0x3ff0000000000000, 0xbff0000000000000, 0xfff0000000000011 };
+    const geometries = [_][]const ChartBucketBounds{
+        &.{.{ .start = -10, .end = 30 }},
+        &.{ .{ .start = -10, .end = 0 }, .{ .start = 1, .end = 3 }, .{ .start = 4, .end = 30 } },
+        &.{ .{ .start = -10, .end = 0 }, .{ .start = 8, .end = 30 } },
+    };
+    var histories: usize = 0;
+    var combinations: usize = 1;
+    for (0..6) |len| {
+        if (len > 0) combinations *= value_bits.len;
+        for (0..combinations) |encoding| {
+            var points: [5]Point = undefined;
+            var digits = encoding;
+            for (points[0..len], 0..) |*point, point_index| {
+                point.* = .{ .timestamp = @as(i64, @intCast(point_index)) * 4, .value = @bitCast(value_bits[digits % value_bits.len]) };
+                digits /= value_bits.len;
+            }
+            for (geometries) |bounds| {
+                for ([_]?u64{ null, 0, 4 }) |gap| {
+                    var expected: [3]ChartBucket = undefined;
+                    var actual: [3]ChartBucket = undefined;
+                    try chartReference(std.testing.allocator, points[0..len], bounds, gap, expected[0..bounds.len]);
+                    var reduction = ChartReduction{ .bounds = bounds, .output = actual[0..bounds.len], .max_gap = gap };
+                    for (points[0..len]) |point| {
+                        try reduction.advanceBefore(point.timestamp);
+                        if (reduction.bucket_index == bounds.len) break;
+                        if (point.timestamp >= bounds[reduction.bucket_index].start) try reduction.observe(point);
+                    }
+                    while (reduction.bucket_index < bounds.len) try reduction.finishBucket();
+                    for (expected[0..bounds.len], actual[0..bounds.len]) |left, right| try expectChartBucket(left, right);
+                }
+            }
+            histories += 1;
+        }
+    }
+    try std.testing.expectEqual(@as(usize, 3906), histories);
+}
+
+test "chart envelope frozen oracle mapped generic codecs bits and admission" {
+    var temporary = std.testing.tmpDir(.{});
+    defer temporary.cleanup();
+    for ([_]Codec{ .raw, .compressed }) |codec| {
+        const filename = if (codec == .raw) "chart-raw.ctdb" else "chart-compressed.ctdb";
+        var writer = try Appender.createOn(std.testing.allocator, try temporary.dir.createFile(filename, .{ .read = true }), codec);
+        defer writer.abort();
+        var names: [chart_oracle_fixtures.len][16]u8 = undefined;
+        var name_slices: [chart_oracle_fixtures.len][]const u8 = undefined;
+        for (chart_oracle_fixtures, 0..) |fixture, fixture_index| {
+            name_slices[fixture_index] = try std.fmt.bufPrint(&names[fixture_index], "case-{d}", .{fixture_index});
+            var timestamps: [16]i64 = undefined;
+            var values: [16]f64 = undefined;
+            for (fixture.points, 0..) |point, point_index| {
+                timestamps[point_index] = point.timestamp;
+                values[point_index] = point.value;
+            }
+            try writer.appendBatch(name_slices[fixture_index], timestamps[0..fixture.points.len], values[0..fixture.points.len]);
+        }
+        try writer.checkpoint(false);
+        const path = try temporary.dir.realpathAlloc(std.testing.allocator, filename);
+        defer std.testing.allocator.free(path);
+        var allocation = ChartTestAllocator{};
+        var mapped = try Reader.open(allocation.allocator(), path);
+        defer mapped.close();
+        var io = ChartTestIo{};
+        var generic = try ReaderFor(ChartTestFile).openOn(allocation.allocator(), .{ .file = try temporary.dir.openFile(filename, .{}), .io = &io });
+        defer generic.close();
+        var handles: [chart_oracle_fixtures.len]SeriesHandle = undefined;
+        for (name_slices, 0..) |name, fixture_index| handles[fixture_index] = try mapped.prepare(name);
+        const before = allocation;
+        allocation.locked = true;
+        inline for (.{ &mapped, &generic }) |reader| {
+            for (chart_oracle_fixtures, 0..) |fixture, fixture_index| {
+                const handle = try reader.prepare(name_slices[fixture_index]);
+                try std.testing.expectEqual(handles[fixture_index], handle);
+                var output = [_]ChartBucket{chartSentinel()} ** 4;
+                var work = ChartWork{};
+                if (comptime @TypeOf(reader.*) == ReaderFor(ChartTestFile)) io = .{};
+                const short = try reader.envelopePreparedInternal(true, handle, fixture.bounds, fixture.max_gap, output[0 .. fixture.bounds.len - 1], &work);
+                try std.testing.expectEqual(ChartProgress{ .required_buckets = fixture.bounds.len, .written_buckets = 0, .complete = false }, short);
+                try std.testing.expect(std.meta.eql(work, ChartWork{}));
+                for (output) |bucket| try expectChartBucket(chartSentinel(), bucket);
+                if (comptime @TypeOf(reader.*) == ReaderFor(ChartTestFile)) try std.testing.expectEqual(@as(usize, 0), io.count);
+                const progress = try reader.envelopePreparedInto(handle, fixture.bounds, fixture.max_gap, &output);
+                try std.testing.expectEqual(ChartProgress{ .required_buckets = fixture.bounds.len, .written_buckets = fixture.bounds.len, .complete = true }, progress);
+                for (fixture.expected, output[0..fixture.bounds.len]) |expected, actual| try expectChartBucket(expected, actual);
+                try expectChartBucket(chartSentinel(), output[fixture.bounds.len]);
+                _ = try reader.envelopeInto(name_slices[fixture_index], fixture.bounds, fixture.max_gap, &output);
+                for (fixture.expected, output[0..fixture.bounds.len]) |expected, actual| try expectChartBucket(expected, actual);
+            }
+            var output = [_]ChartBucket{chartSentinel()} ** 3;
+            const handle = try reader.prepare(name_slices[0]);
+            if (comptime @TypeOf(reader.*) == ReaderFor(ChartTestFile)) io = .{};
+            const invalid = [_][]const ChartBucketBounds{
+                &.{.{ .start = 2, .end = 1 }},
+                &.{ .{ .start = 0, .end = 2 }, .{ .start = 2, .end = 3 } },
+                &.{ .{ .start = 5, .end = 6 }, .{ .start = 0, .end = 1 } },
+            };
+            for (invalid) |bounds| {
+                try std.testing.expectError(error.InvalidArguments, reader.envelopePreparedInto(handle, bounds, null, &.{}));
+                try std.testing.expectError(error.InvalidArguments, reader.envelopePreparedInto(handle, bounds, null, &output));
+                try std.testing.expectError(error.SeriesNotFound, reader.envelopeInto("missing", bounds, null, &output));
+            }
+            try std.testing.expectError(error.SeriesNotFound, reader.envelopeInto("missing", &.{}, null, &output));
+            try std.testing.expectError(error.StaleSeriesHandle, reader.envelopePreparedInto(.{ .index = handle.index, .generation = handle.generation - 1 }, &.{}, null, &output));
+            try std.testing.expectError(error.StaleSeriesHandle, reader.envelopePreparedInto(.{ .index = std.math.maxInt(u32), .generation = handle.generation }, invalid[0], null, &.{}));
+            try std.testing.expectEqual(ChartProgress{ .required_buckets = 0, .written_buckets = 0, .complete = true }, try reader.envelopePreparedInto(handle, &.{}, null, &output));
+            for (output) |bucket| try expectChartBucket(chartSentinel(), bucket);
+            if (comptime @TypeOf(reader.*) == ReaderFor(ChartTestFile)) try std.testing.expectEqual(@as(usize, 0), io.count);
+        }
+        try std.testing.expectEqual(before.alloc_attempts, allocation.alloc_attempts);
+        try std.testing.expectEqual(before.resize_attempts, allocation.resize_attempts);
+        try std.testing.expectEqual(before.remap_attempts, allocation.remap_attempts);
+        try std.testing.expectEqual(before.frees, allocation.frees);
+    }
+}
+
+test "chart envelope crosses restarts pages and index children in one scan" {
+    var temporary = std.testing.tmpDir(.{});
+    defer temporary.cleanup();
+    const per_page = 131;
+    const pages = index.entry_capacity + 3;
+    var points: [pages * per_page]Point = undefined;
+    var timestamps: [points.len]i64 = undefined;
+    var values: [points.len]f64 = undefined;
+    var timestamp: i64 = -20000;
+    for (&points, &timestamps, &values, 0..) |*point, *stored_timestamp, *value, point_index| {
+        timestamp += @intCast(2 + point_index % 11);
+        stored_timestamp.* = timestamp;
+        value.* = 20 + @as(f64, @floatFromInt(point_index % 100)) * 0.001;
+        point.* = .{ .timestamp = timestamp, .value = value.* };
+    }
+    // Adjacent bounds spanning each restart and page; all original points enter.
+    var bounds: [pages * 3]ChartBucketBounds = undefined;
+    for (0..pages) |page_index| {
+        const first = page_index * per_page;
+        bounds[page_index * 3] = .{
+            .start = if (page_index == 0) timestamps[first] else timestamps[first - 1] + 1,
+            .end = timestamps[first + 126],
+        };
+        bounds[page_index * 3 + 1] = .{ .start = timestamps[first + 126] + 1, .end = timestamps[first + 128] };
+        bounds[page_index * 3 + 2] = .{ .start = timestamps[first + 128] + 1, .end = timestamps[first + 130] };
+    }
+    var expected: [bounds.len]ChartBucket = undefined;
+    try chartReference(std.testing.allocator, &points, &bounds, 7, &expected);
+    for ([_]Codec{ .raw, .compressed }) |codec| {
+        const filename = if (codec == .raw) "chart-boundary-raw.ctdb" else "chart-boundary-compressed.ctdb";
+        var writer = try Appender.createOn(std.testing.allocator, try temporary.dir.createFile(filename, .{ .read = true }), codec);
+        defer writer.abort();
+        for (0..pages) |page_index| {
+            const first = page_index * per_page;
+            try writer.appendBatch("signal", timestamps[first..][0..per_page], values[first..][0..per_page]);
+            try writer.checkpoint(false);
+        }
+        const path = try temporary.dir.realpathAlloc(std.testing.allocator, filename);
+        defer std.testing.allocator.free(path);
+        var allocation = ChartTestAllocator{};
+        var mapped = try Reader.open(allocation.allocator(), path);
+        defer mapped.close();
+        var io = ChartTestIo{};
+        var generic = try ReaderFor(ChartTestFile).openOn(allocation.allocator(), .{ .file = try temporary.dir.openFile(filename, .{}), .io = &io });
+        defer generic.close();
+        const handle = try mapped.prepare("signal");
+        const root = try generic.loadNode(generic.series.items[handle.index].root);
+        try std.testing.expectEqual(@as(u8, 1), root.level);
+        try std.testing.expectEqual(@as(u16, 2), root.count);
+        const codec_counts = try generic.codecCounts("signal");
+        try std.testing.expectEqual(@as(usize, pages), codec_counts[if (codec == .raw) 0 else 1]);
+        const leaf = try generic.loadNode(root.entries[0].pointer);
+        var scratch: [format.page_size]u8 = undefined;
+        const first_page = try generic.loadPage(leaf.entries[0].pointer, &scratch);
+        try std.testing.expectEqual(@as(u32, per_page), first_page.statistics.count);
+        if (codec == .compressed) {
+            try std.testing.expectEqual(page.TimestampCodec.delta_varint, first_page.timestamp_codec);
+            try std.testing.expectEqual(page.ValueCodec.xor_varint, first_page.value_codec);
+        }
+        const before = allocation;
+        allocation.locked = true;
+        inline for (.{ &mapped, &generic }) |reader| {
+            var output: [bounds.len]ChartBucket = undefined;
+            for (0..2) |pass| {
+                io = .{};
+                var work = ChartWork{};
+                _ = try reader.envelopePreparedInternal(true, try reader.prepare("signal"), &bounds, 7, &output, &work);
+                for (expected, output) |left, right| try expectChartBucket(left, right);
+                std.debug.print("CT-012 boundary codec={s} storage={s} pass={d} index_visits={d} page_loads={d} auth_bytes={d} validation_records={d} selection_records={d} emitted_points={d} generic_revisits={d}\n", .{
+                    @tagName(codec),         if (comptime @TypeOf(reader.*) == Reader) "mapped" else "generic", pass,
+                    work.index_visits,       work.page_loads,                                                   work.authenticated_bytes,
+                    work.validation_records, work.selection_records,                                            work.emitted_points,
+                    io.revisits,
+                });
+                try std.testing.expectEqual(@as(u64, pages), work.page_loads);
+                try std.testing.expectEqual(@as(u64, 3), work.index_visits);
+                try std.testing.expectEqual(@as(u64, points.len), work.selection_records);
+                try std.testing.expect(work.emitted_points <= bounds.len * 4);
+                if (comptime @TypeOf(reader.*) == ReaderFor(ChartTestFile)) {
+                    try std.testing.expectEqual(@as(usize, 0), io.revisits);
+                    try std.testing.expectEqual(work.page_loads + work.index_visits, io.count);
+                    try std.testing.expectEqual(work.authenticated_bytes, io.bytes);
+                    try std.testing.expectEqual(@as(u64, points.len), work.validation_records);
+                } else if (pass == 0) {
+                    try std.testing.expectEqual(@as(u64, points.len), work.validation_records);
+                } else {
+                    // Cache capacity is geometry bounded; count actual revalidation.
+                    try std.testing.expect(work.validation_records <= points.len);
+                }
+            }
+            io = .{};
+            _ = try reader.envelopeInto("signal", &bounds, 7, &output);
+            for (expected, output) |left, right| try expectChartBucket(left, right);
+            if (comptime @TypeOf(reader.*) == ReaderFor(ChartTestFile)) {
+                try std.testing.expectEqual(@as(usize, pages + 3), io.count);
+                try std.testing.expectEqual(@as(usize, 0), io.revisits);
+            }
+            // Timestamp-disjoint pruning: one page, not every page in history.
+            const first = [_]ChartBucketBounds{.{ .start = timestamps[127], .end = timestamps[129] }};
+            var output_first: [1]ChartBucket = undefined;
+            var expected_first: [1]ChartBucket = undefined;
+            try chartReference(std.testing.allocator, &points, &first, null, &expected_first);
+            io = .{};
+            var work = ChartWork{};
+            _ = try reader.envelopePreparedInternal(true, try reader.prepare("signal"), &first, null, &output_first, &work);
+            try expectChartBucket(expected_first[0], output_first[0]);
+            try std.testing.expectEqual(@as(u64, 1), work.page_loads);
+            try std.testing.expectEqual(@as(u64, 2), work.index_visits);
+            try std.testing.expect(work.selection_records <= per_page);
+            if (comptime @TypeOf(reader.*) == ReaderFor(ChartTestFile)) try std.testing.expectEqual(@as(usize, 0), io.revisits);
+        }
+        try std.testing.expectEqual(before.alloc_attempts, allocation.alloc_attempts);
+        try std.testing.expectEqual(before.resize_attempts, allocation.resize_attempts);
+        try std.testing.expectEqual(before.remap_attempts, allocation.remap_attempts);
+        try std.testing.expectEqual(before.frees, allocation.frees);
+    }
+}
+
+test "chart envelope 1200 buckets preserves product oracle exceptional values" {
+    var temporary = std.testing.tmpDir(.{});
+    defer temporary.cleanup();
+    const offsets = [_]i64{ 0, 1, 2, 3, 4, 12, 13, 14, 15, 19 };
+    const bits = [_]u64{ 0, 0x408f400000000000, 0xc08f400000000000, 0x8000000000000000, 1, 0x8000000000000001, 0x7ff8000000000123, 0xfff0000000000000, 0x7ff0000000000000, 0x7ff0000000000011 };
+    var points: [12000]Point = undefined;
+    var timestamps: [points.len]i64 = undefined;
+    var values: [points.len]f64 = undefined;
+    var bounds: [1200]ChartBucketBounds = undefined;
+    for (&bounds, 0..) |*bound, bucket_index| {
+        const start: i64 = @as(i64, @intCast(bucket_index)) * 20;
+        for (offsets, bits, 0..) |offset, value_bits, within| {
+            const original_index = bucket_index * offsets.len + within;
+            points[original_index] = .{ .timestamp = start + offset, .value = @bitCast(value_bits) };
+            timestamps[original_index] = start + offset;
+            values[original_index] = @bitCast(value_bits);
+        }
+        bound.* = if (bucket_index % 13 == 0)
+            .{ .start = start + 5, .end = start + 10 }
+        else if (bucket_index % 17 == 0)
+            .{ .start = start + 1, .end = start + 19 }
+        else
+            .{ .start = start, .end = start + 19 };
+    }
+    var expected: [bounds.len]ChartBucket = undefined;
+    try chartReference(std.testing.allocator, &points, &bounds, 6, &expected);
+    var emitted: u64 = 0;
+    for (expected) |bucket| emitted += bucket.sample_count;
+    // Pinned independent Python product fixture: exact selected identity count.
+    try std.testing.expectEqual(@as(u64, 4428), emitted);
+    for ([_]Codec{ .raw, .compressed }) |codec| {
+        const filename = if (codec == .raw) "chart-product-raw.ctdb" else "chart-product-compressed.ctdb";
+        var writer = try Appender.createOn(std.testing.allocator, try temporary.dir.createFile(filename, .{ .read = true }), codec);
+        defer writer.abort();
+        try writer.appendBatch("signal", &timestamps, &values);
+        try writer.checkpoint(false);
+        const path = try temporary.dir.realpathAlloc(std.testing.allocator, filename);
+        defer std.testing.allocator.free(path);
+        var allocation = ChartTestAllocator{};
+        var mapped = try Reader.open(allocation.allocator(), path);
+        defer mapped.close();
+        var io = ChartTestIo{};
+        var generic = try ReaderFor(ChartTestFile).openOn(allocation.allocator(), .{ .file = try temporary.dir.openFile(filename, .{}), .io = &io });
+        defer generic.close();
+        const before = allocation;
+        allocation.locked = true;
+        inline for (.{ &mapped, &generic }) |reader| {
+            var output: [bounds.len]ChartBucket = undefined;
+            for (0..2) |pass| {
+                var work = ChartWork{};
+                io = .{};
+                const progress = try reader.envelopePreparedInternal(true, try reader.prepare("signal"), &bounds, 6, &output, &work);
+                try std.testing.expectEqual(ChartProgress{ .required_buckets = 1200, .written_buckets = 1200, .complete = true }, progress);
+                for (expected, output) |left, right| try expectChartBucket(left, right);
+                std.debug.print("CT-012 product codec={s} storage={s} pass={d} index_visits={d} page_loads={d} auth_bytes={d} validation_records={d} selection_records={d} emitted_points={d} generic_revisits={d}\n", .{
+                    @tagName(codec),         if (comptime @TypeOf(reader.*) == Reader) "mapped" else "generic", pass,
+                    work.index_visits,       work.page_loads,                                                   work.authenticated_bytes,
+                    work.validation_records, work.selection_records,                                            work.emitted_points,
+                    io.revisits,
+                });
+                try std.testing.expectEqual(emitted, work.emitted_points);
+                try std.testing.expectEqual(@as(u64, points.len), work.selection_records);
+                try std.testing.expect(work.page_loads < 1200);
+                if (comptime @TypeOf(reader.*) == ReaderFor(ChartTestFile)) {
+                    try std.testing.expectEqual(@as(usize, 0), io.revisits);
+                    try std.testing.expectEqual(work.authenticated_bytes, io.bytes);
+                    try std.testing.expectEqual(@as(u64, points.len), work.validation_records);
+                }
+            }
+            io = .{};
+            _ = try reader.envelopeInto("signal", &bounds, 6, &output);
+            if (comptime @TypeOf(reader.*) == ReaderFor(ChartTestFile)) try std.testing.expectEqual(@as(usize, 0), io.revisits);
+            for (expected, output) |left, right| try expectChartBucket(left, right);
+        }
+        try std.testing.expectEqual(before.alloc_attempts, allocation.alloc_attempts);
+        try std.testing.expectEqual(before.resize_attempts, allocation.resize_attempts);
+        try std.testing.expectEqual(before.remap_attempts, allocation.remap_attempts);
+        try std.testing.expectEqual(before.frees, allocation.frees);
+    }
+}
+
+test "chart envelope unaligned byte selection and generic warm authentication" {
+    var temporary = std.testing.tmpDir(.{});
+    defer temporary.cleanup();
+    for ([_]Codec{ .raw, .compressed }) |codec| {
+        const filename = if (codec == .raw) "chart-unaligned-raw.ctdb" else "chart-unaligned-compressed.ctdb";
+        var writer = try Appender.createOn(std.testing.allocator, try temporary.dir.createFile(filename, .{ .read = true }), codec);
+        defer writer.abort();
+        const timestamps = [_]i64{ -10, 0, 10 };
+        const values = [_]f64{ -0.0, @bitCast(@as(u64, 0xfff0000000000005)), 1.5 };
+        const points = [_]Point{ .{ .timestamp = -10, .value = values[0] }, .{ .timestamp = 0, .value = values[1] }, .{ .timestamp = 10, .value = values[2] } };
+        try writer.appendBatch("signal", &timestamps, &values);
+        try writer.checkpoint(false);
+        var io = ChartTestIo{};
+        var reader = try ReaderFor(ChartTestFile).openOn(std.testing.allocator, .{ .file = try temporary.dir.openFile(filename, .{}), .io = &io });
+        defer reader.close();
+        const handle = try reader.prepare("signal");
+        const series_entry = &reader.series.items[handle.index];
+        var node = try reader.loadNode(series_entry.root);
+        const pointer = node.entries[0].pointer;
+        var bytes: [format.page_size + 8]u8 align(8) = undefined;
+        const scratch: *[format.page_size]u8 = @ptrCast(bytes[1..][0..format.page_size].ptr);
+        const view = try reader.loadPage(pointer, scratch);
+        try std.testing.expect(@intFromPtr(view.bytes.ptr) % 8 != 0);
+        try std.testing.expect(view.rawTimestamps() == null);
+        try std.testing.expect(view.rawValues() == null);
+        const bounds = [_]ChartBucketBounds{ .{ .start = -10, .end = -1 }, .{ .start = 0, .end = 0 }, .{ .start = 1, .end = 10 } };
+        var expected: [3]ChartBucket = undefined;
+        var actual: [3]ChartBucket = undefined;
+        try chartReference(std.testing.allocator, &points, &bounds, 9, &expected);
+        var reduction = ChartReduction{ .bounds = &bounds, .output = &actual, .max_gap = 9 };
+        try chartSelectPage(view, &reduction, false, {});
+        while (reduction.bucket_index < bounds.len) try reduction.finishBucket();
+        for (expected, actual) |left, right| try expectChartBucket(left, right);
+        _ = try reader.envelopePreparedInto(handle, &bounds, 9, &actual);
+        for (expected, actual) |left, right| try expectChartBucket(left, right);
+        const mutable = try temporary.dir.openFile(filename, .{ .mode = .read_write });
+        defer mutable.close();
+        const corrupted = [_]u8{view.bytes[format.page_header_size] ^ 1};
+        try mutable.pwriteAll(&corrupted, pointer.offset + format.page_header_size);
+        io = .{};
+        try std.testing.expect(!(try reader.envelopePreparedInto(handle, &bounds, 9, &.{})).complete);
+        try std.testing.expectEqual(@as(usize, 0), io.count);
+        try std.testing.expectError(error.ChecksumMismatch, reader.envelopePreparedInto(handle, &bounds, 9, &actual));
+        try mutable.pwriteAll(view.bytes, pointer.offset);
+        _ = try reader.envelopePreparedInto(handle, &bounds, 9, &actual);
+        // Re-signed bytes still require the current manifest series edge.
+        node.series_id += 1;
+        var encoded: [format.index_node_size]u8 = undefined;
+        try index.encode(&node, &encoded);
+        try mutable.pwriteAll(&encoded, series_entry.root.offset);
+        series_entry.root.identity = checksum.calculate(&encoded);
+        const empty_bound = [_]ChartBucketBounds{.{ .start = 100, .end = 101 }};
+        try std.testing.expectError(error.InvalidDatabase, reader.envelopePreparedInto(handle, &empty_bound, null, actual[0..1]));
+    }
+}
+
+test "chart envelope validates immutable cached parent edges and matching control" {
+    for ([_]Codec{ .raw, .compressed }) |codec| {
+        for ([_]bool{ true, false }) |conflicting| {
+            var temporary = std.testing.tmpDir(.{});
+            defer temporary.cleanup();
+            try writeCachedPageEdgeFixture(temporary.dir, codec, conflicting);
+            var allocation = ChartTestAllocator{};
+            var mapped = try openCachedPageEdgeFixture(temporary.dir, allocation.allocator());
+            defer mapped.close();
+            var io = ChartTestIo{};
+            var generic = try ReaderFor(ChartTestFile).openOn(allocation.allocator(), .{ .file = try temporary.dir.openFile("cached-edge.ctdb", .{}), .io = &io });
+            defer generic.close();
+            const bounds = [_]ChartBucketBounds{ .{ .start = -10, .end = -10 }, .{ .start = 10, .end = 15 } };
+            const before = allocation;
+            allocation.locked = true;
+            inline for (.{ &mapped, &generic }) |reader| {
+                const handle = try reader.prepare("signal");
+                var output: [2]ChartBucket = undefined;
+                if (conflicting) {
+                    // Cold conflicting edge and a prior API-warmed cache hit.
+                    try std.testing.expectError(error.InvalidDatabase, reader.envelopePreparedInto(handle, bounds[1..], null, output[0..1]));
+                    if (comptime @TypeOf(reader.*) == Reader) try warmCachedPageEdge(reader, handle);
+                    try std.testing.expectError(error.InvalidDatabase, reader.envelopePreparedInto(handle, &bounds, null, &output));
+                    _ = try reader.envelopePreparedInto(handle, bounds[0..1], null, output[0..1]);
+                    try std.testing.expectEqual(@as(i64, -10), output[0].samples[0].point.timestamp);
+                } else {
+                    for (0..2) |_| {
+                        var work = ChartWork{};
+                        _ = try reader.envelopePreparedInternal(true, handle, &bounds, null, &output, &work);
+                        try std.testing.expectEqual(@as(u64, 2), work.page_loads);
+                        try std.testing.expectEqual(@as(u64, 1), output[0].stored_count);
+                        try std.testing.expectEqual(@as(u64, 1), output[1].stored_count);
+                        try std.testing.expectEqual(@as(i64, -10), output[0].samples[0].point.timestamp);
+                        try std.testing.expectEqual(@as(i64, 10), output[1].samples[0].point.timestamp);
+                        try std.testing.expect(output[1].samples[0].break_before.excluded_interval);
+                    }
+                }
+            }
+            try std.testing.expectEqual(before.alloc_attempts, allocation.alloc_attempts);
+            try std.testing.expectEqual(before.resize_attempts, allocation.resize_attempts);
+            try std.testing.expectEqual(before.remap_attempts, allocation.remap_attempts);
+            try std.testing.expectEqual(before.frees, allocation.frees);
+        }
+    }
+}
+
+test "chart envelope refresh stale handles and copied result lifetime" {
+    var temporary = std.testing.tmpDir(.{});
+    defer temporary.cleanup();
+    var writer = try Appender.createOn(std.testing.allocator, try temporary.dir.createFile("chart-refresh.ctdb", .{ .read = true }), .compressed);
+    defer writer.abort();
+    try writer.append("signal", 10, -0.0);
+    try writer.checkpoint(false);
+    const path = try temporary.dir.realpathAlloc(std.testing.allocator, "chart-refresh.ctdb");
+    defer std.testing.allocator.free(path);
+    var mapped = try Reader.open(std.testing.allocator, path);
+    var io = ChartTestIo{};
+    var generic = try ReaderFor(ChartTestFile).openOn(std.testing.allocator, .{ .file = try temporary.dir.openFile("chart-refresh.ctdb", .{}), .io = &io });
+    const mapped_handle = try mapped.prepare("signal");
+    const generic_handle = try generic.prepare("signal");
+    const bounds = [_]ChartBucketBounds{.{ .start = 10, .end = 20 }};
+    var copied: [1]ChartBucket = undefined;
+    _ = try mapped.envelopePreparedInto(mapped_handle, &bounds, null, &copied);
+    try std.testing.expect(!try mapped.refresh());
+    try std.testing.expect(!try generic.refresh());
+    try writer.append("signal", 20, 2);
+    try writer.checkpoint(false);
+    inline for (.{ &mapped, &generic }, .{ mapped_handle, generic_handle }) |reader, old_handle| {
+        var output: [1]ChartBucket = undefined;
+        _ = try reader.envelopePreparedInto(old_handle, &bounds, null, &output);
+        try std.testing.expectEqual(@as(u64, 1), output[0].stored_count);
+        try std.testing.expect(try reader.refresh());
+        try std.testing.expectError(error.StaleSeriesHandle, reader.envelopePreparedInto(old_handle, &.{}, null, &output));
+        try std.testing.expectError(error.StaleSeriesHandle, reader.envelopePreparedInto(old_handle, &bounds, null, &.{}));
+        _ = try reader.envelopeInto("signal", &bounds, 10, &output);
+        try std.testing.expectEqual(@as(u64, 2), output[0].stored_count);
+        try std.testing.expect(!output[0].has_internal_time_gap);
+        reader.close();
+    }
+    try std.testing.expectEqual(@as(u64, 1), copied[0].stored_count);
+    try std.testing.expectEqual(@as(u8, 1), copied[0].sample_count);
+    try std.testing.expectEqual(@as(i64, 10), copied[0].samples[0].point.timestamp);
+    try std.testing.expectEqual(@as(u64, 0x8000000000000000), @as(u64, @bitCast(copied[0].samples[0].point.value)));
+}
+
+// Every fixture is fully on disk and immutable before either reader opens.
+const ChartBadEdge = enum { page_series, child_series, child_summary, child_level };
+fn writeChartBadEdgeFixture(directory: std.fs.Dir, codec: Codec, fault: ChartBadEdge) !u64 {
+    {
+        var writer = try Appender.createOn(std.testing.allocator, try directory.createFile("chart-bad-edge.ctdb", .{ .read = true }), codec);
+        var opened = true;
+        defer if (opened) writer.abort();
+        for (0..index.entry_capacity + 1) |page_index| {
+            const start: i64 = @intCast(page_index * 10);
+            try writer.appendBatch("signal", &.{ start, start + 1, start + 2 }, &.{ 1, 2, 3 });
+            try writer.checkpoint(false);
+        }
+        try writer.close();
+        opened = false;
+    }
+    const file = try directory.openFile("chart-bad-edge.ctdb", .{ .mode = .read_write });
+    defer file.close();
+    const physical_size = try file.getEndPos();
+    var snapshot = (try loadSnapshot(std.testing.allocator, file, physical_size)) orelse return error.MissingFixtureSnapshot;
+    defer snapshot.deinit(std.testing.allocator);
+    const series = &snapshot.catalog.series.items[0];
+    var root_bytes: [format.index_node_size]u8 = undefined;
+    try std.testing.expectEqual(root_bytes.len, try file.preadAll(&root_bytes, series.root.offset));
+    var root_node = try index.decode(&root_bytes, series.root, snapshot.root.committed_size);
+    try std.testing.expectEqual(@as(u8, 1), root_node.level);
+    const first_child = &root_node.entries[0];
+    switch (fault) {
+        .child_level => root_node.level = 2,
+        .child_summary => first_child.summary.value_sum += 1,
+        .child_series, .page_series => {
+            var child_bytes: [format.index_node_size]u8 = undefined;
+            try std.testing.expectEqual(child_bytes.len, try file.preadAll(&child_bytes, first_child.pointer.offset));
+            var child = try index.decode(&child_bytes, first_child.pointer, snapshot.root.committed_size);
+            if (fault == .child_series) {
+                child.series_id += 1;
+            } else {
+                var data: [format.page_size]u8 = undefined;
+                const first_page = &child.entries[0];
+                const size: usize = first_page.pointer.size;
+                try std.testing.expectEqual(size, try file.preadAll(data[0..size], first_page.pointer.offset));
+                _ = try page.decode(data[0..size], first_page.pointer.identity);
+                std.mem.writeInt(u32, data[8..12], series.id + 1, .little);
+                first_page.pointer.identity = checksum.calculate(data[0..size]);
+                _ = try page.decode(data[0..size], first_page.pointer.identity);
+                try file.pwriteAll(data[0..size], first_page.pointer.offset);
+            }
+            try index.encode(&child, &child_bytes);
+            first_child.pointer.identity = checksum.calculate(&child_bytes);
+            _ = try index.decode(&child_bytes, first_child.pointer, snapshot.root.committed_size);
+            try file.pwriteAll(&child_bytes, first_child.pointer.offset);
+        },
+    }
+    try index.encode(&root_node, &root_bytes);
+    series.root.identity = checksum.calculate(&root_bytes);
+    series.summary = root_node.summary;
+    _ = try index.decode(&root_bytes, series.root, snapshot.root.committed_size);
+    try file.pwriteAll(&root_bytes, series.root.offset);
+    var manifest_bytes: std.ArrayList(u8) = .empty;
+    defer manifest_bytes.deinit(std.testing.allocator);
+    var manifest_pointer = try manifest.encode(&manifest_bytes, std.testing.allocator, snapshot.root.generation, snapshot.catalog.series.items);
+    try std.testing.expectEqual(snapshot.root.manifest.size, manifest_pointer.size);
+    manifest_pointer.offset = snapshot.root.manifest.offset;
+    try file.pwriteAll(manifest_bytes.items, manifest_pointer.offset);
+    const control = try validateControl(file, physical_size);
+    const candidates = collectRoots(&control, physical_size);
+    const root = format.Root{
+        .generation = snapshot.root.generation,
+        .committed_size = snapshot.root.committed_size,
+        .manifest = manifest_pointer,
+        .previous_identity = snapshot.root.previous_identity,
+    };
+    var encoded_root: [format.root_slot_size]u8 = undefined;
+    root.encode(&encoded_root);
+    var replaced = false;
+    for (candidates, 0..) |candidate, slot| {
+        if (candidate) |value| {
+            if (!checksum.equal(value.identity, snapshot.root_identity)) continue;
+            try std.testing.expect(rootHasValidPredecessor(&candidates, value));
+            try file.pwriteAll(&encoded_root, try format.rootSlotOffset(slot));
+            replaced = true;
+        }
+    }
+    try std.testing.expect(replaced);
+    return root.generation;
+}
+
+test "chart envelope rejects authenticated child level summary and series edges" {
+    for ([_]Codec{ .raw, .compressed }) |codec| {
+        for (std.enums.values(ChartBadEdge)) |fault| {
+            var temporary = std.testing.tmpDir(.{});
+            defer temporary.cleanup();
+            const generation = try writeChartBadEdgeFixture(temporary.dir, codec, fault);
+            const path = try temporary.dir.realpathAlloc(std.testing.allocator, "chart-bad-edge.ctdb");
+            defer std.testing.allocator.free(path);
+            var mapped = try Reader.open(std.testing.allocator, path);
+            defer mapped.close();
+            var io = ChartTestIo{};
+            var generic = try ReaderFor(ChartTestFile).openOn(std.testing.allocator, .{ .file = try temporary.dir.openFile("chart-bad-edge.ctdb", .{}), .io = &io });
+            defer generic.close();
+            const bounds = [_]ChartBucketBounds{.{ .start = 0, .end = 2 }};
+            var output: [1]ChartBucket = undefined;
+            inline for (.{ &mapped, &generic }) |reader| {
+                // Newest fully re-signed snapshot, not accidental root fallback.
+                try std.testing.expectEqual(generation, reader.generation);
+                const handle = try reader.prepare("signal");
+                for (0..2) |_| try std.testing.expectError(error.InvalidDatabase, reader.envelopePreparedInto(handle, &bounds, null, &output));
+            }
+        }
     }
 }
