@@ -4,6 +4,7 @@ import argparse
 import base64
 import contextlib
 import csv
+import gzip
 import hashlib
 import importlib.metadata
 import importlib.util
@@ -177,12 +178,16 @@ class ArchiveTests(FixtureCase):
 
     def test_declared_oversized_member_rejected_before_reading_body(self):
         archive = self.root / "chronotail-2.0.0-macos-aarch64.tar.gz"
-        with tarfile.open(archive, "w:gz") as target:
-            entry = tarfile.TarInfo("chronotail/huge")
-            entry.size = GATE.MAX_FILE + 1
-            target.addfile(entry)  # Deliberately no body: rejection must precede decoding.
-        with self.assertRaisesRegex(GATE.GateError, "member too large"):
-            GATE.verify_bundle(archive, GATE.sha256(archive), "2.0.0", self.root / "extracted")
+        entry = tarfile.TarInfo("chronotail/huge")
+        entry.size = GATE.MAX_FILE + 1
+        # Write only the declared header; addfile requires a body on Python 3.14.
+        with gzip.open(archive, "wb") as target:
+            target.write(entry.tobuf(format=tarfile.USTAR_FORMAT))
+        self.assertLess(archive.stat().st_size, 1024)
+        with patch.object(tarfile.TarFile, "extractfile", side_effect=AssertionError("body read")) as body_read:
+            with self.assertRaisesRegex(GATE.GateError, "member too large"):
+                GATE.verify_bundle(archive, GATE.sha256(archive), "2.0.0", self.root / "extracted")
+            body_read.assert_not_called()
 
     def test_old_receipt_cannot_redirect_hash_source_or_capability(self):
         old = self.verify()
