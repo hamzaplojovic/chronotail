@@ -67,10 +67,9 @@ PY
 profile() {
   require_tools
   metadata
-  local args=()
-  if [[ "${1:-quick}" == quick ]]; then args+=(--quick); fi
+  if [[ "${1:-quick}" == quick ]]; then set -- --quick; else set --; fi
   zig build performance -Doptimize=ReleaseFast -- \
-    "${args[@]}" --output .dev-results/profile.jsonl \
+    "$@" --output .dev-results/profile.jsonl \
     2>&1 | tee .dev-results/profile.log
   python3 scripts/check-profile.py .dev-results/profile.jsonl
 }
