@@ -11,12 +11,16 @@
   Python wheel and a standalone Go consumer.
 - Copied range reads now support unaligned generic-storage scratch while
   retaining borrowed raw-view alignment requirements and required-count behavior.
+- Mapped readers reject conflicting authenticated index entries consistently
+  on both fresh and cached page reads.
 - Internal engine regressions run alongside public tests. Developer setup pins
   tools and provides matching local/CI correctness, resource, and release gates.
 - Documentation validation checks local targets and anchors offline; resource
   validation requires the exact declared workload identities and repetitions.
 - Native release smoke tests isolate the installed Python package's bundled
   library from checkout overrides and inherited loader search paths.
+- Native developer gates handle canonical macOS temporary paths and full-profile
+  argument dispatch on the system Bash.
 
 ## Compatibility and release validation
 
