@@ -1945,7 +1945,12 @@ pub fn ReaderFor(comptime File: type) type {
         ) !page.View {
             if (comptime File != std.fs.File) unreachable;
             if (runtime.active_page) |cached| {
-                if (pointerEqual(cached.pointer, entry.pointer)) return cached.view;
+                if (pointerEqual(cached.pointer, entry.pointer)) {
+                    if (cached.view.series_id != series_id or
+                        !summaryEqual(index.Summary.fromPage(cached.view.statistics), entry.summary))
+                        return error.InvalidDatabase;
+                    return cached.view;
+                }
             }
             const view = try self.loadMappedPage(entry.pointer);
             if (view.series_id != series_id or
@@ -2412,4 +2417,229 @@ test "strict timestamp validation covers vector tails" {
     try std.testing.expect(timestampsStrictlyIncreasing(&.{ 1, 2, 3, 4, 5, 6, 7 }));
     try std.testing.expect(!timestampsStrictlyIncreasing(&.{ 1, 2, 3, 4, 4, 6, 7 }));
     try std.testing.expect(!timestampsStrictlyIncreasing(&.{ 1, 2, 3, 4, 5, 4, 7 }));
+}
+
+// Build and re-sign the complete fixture before opening any mapped reader.
+// No reader/catalog injection or mutation of mapped bytes is required.
+fn writeCachedPageEdgeFixture(directory: std.fs.Dir, codec: Codec, conflicting: bool) !void {
+    {
+        const file = try directory.createFile("cached-edge.ctdb", .{ .read = true });
+        var writer = try Appender.createOn(std.testing.allocator, file, codec);
+        var open = true;
+        defer if (open) writer.abort();
+        try writer.append("signal", -10, 1);
+        try writer.checkpoint(false);
+        try writer.appendBatch("signal", &.{ 10, 20 }, &.{ 2, 3 });
+        try writer.checkpoint(false);
+        open = false;
+        try writer.close();
+    }
+    if (!conflicting) return;
+
+    const file = try directory.openFile("cached-edge.ctdb", .{ .mode = .read_write });
+    defer file.close();
+    const physical_size = try file.getEndPos();
+    var snapshot = (try loadSnapshot(std.testing.allocator, file, physical_size)) orelse
+        return error.MissingFixtureSnapshot;
+    defer snapshot.deinit(std.testing.allocator);
+    try std.testing.expectEqual(@as(u64, 3), snapshot.root.generation);
+    try std.testing.expectEqual(@as(usize, 1), snapshot.catalog.series.items.len);
+
+    const series = &snapshot.catalog.series.items[0];
+    var node_bytes: [format.index_node_size]u8 = undefined;
+    try std.testing.expectEqual(node_bytes.len, try file.preadAll(&node_bytes, series.root.offset));
+    var node = try index.decode(&node_bytes, series.root, snapshot.root.committed_size);
+    try std.testing.expectEqual(@as(u8, 0), node.level);
+    try std.testing.expectEqual(@as(u16, 2), node.count);
+    // Retain two ordered, nonoverlapping summaries but point both at the first
+    // page. Byte authentication remains valid; the second page edge is false.
+    node.entries[1].pointer = node.entries[0].pointer;
+    try index.encode(&node, &node_bytes);
+    series.root.identity = checksum.calculate(&node_bytes);
+    _ = try index.decode(&node_bytes, series.root, snapshot.root.committed_size);
+    try std.testing.expect(summaryEqual(node.summary, series.summary));
+    try file.pwriteAll(&node_bytes, series.root.offset);
+
+    var manifest_bytes: std.ArrayList(u8) = .empty;
+    defer manifest_bytes.deinit(std.testing.allocator);
+    var manifest_pointer = try manifest.encode(
+        &manifest_bytes,
+        std.testing.allocator,
+        snapshot.root.generation,
+        snapshot.catalog.series.items,
+    );
+    try std.testing.expectEqual(snapshot.root.manifest.size, manifest_pointer.size);
+    manifest_pointer.offset = snapshot.root.manifest.offset;
+    try file.pwriteAll(manifest_bytes.items, manifest_pointer.offset);
+
+    const control = try validateControl(file, physical_size);
+    const candidates = collectRoots(&control, physical_size);
+    const root = format.Root{
+        .generation = snapshot.root.generation,
+        .committed_size = snapshot.root.committed_size,
+        .manifest = manifest_pointer,
+        .previous_identity = snapshot.root.previous_identity,
+    };
+    var encoded_root: [format.root_slot_size]u8 = undefined;
+    root.encode(&encoded_root);
+    var replaced = false;
+    for (candidates, 0..) |candidate, slot| {
+        if (candidate) |value| {
+            if (!checksum.equal(value.identity, snapshot.root_identity)) continue;
+            try std.testing.expect(rootHasValidPredecessor(&candidates, value));
+            try file.pwriteAll(&encoded_root, try format.rootSlotOffset(slot));
+            replaced = true;
+        }
+    }
+    try std.testing.expect(replaced);
+    // Reader.open must select the re-signed newest generation, not a fallback.
+    var authenticated = (try loadSnapshot(std.testing.allocator, file, physical_size)) orelse
+        return error.MissingFixtureSnapshot;
+    defer authenticated.deinit(std.testing.allocator);
+    try std.testing.expectEqual(root.generation, authenticated.root.generation);
+    try std.testing.expect(checksum.equal(
+        authenticated.catalog.series.items[0].root.identity,
+        series.root.identity,
+    ));
+}
+
+fn openCachedPageEdgeFixture(directory: std.fs.Dir, allocator: std.mem.Allocator) !Reader {
+    const path = try directory.realpathAlloc(std.testing.allocator, "cached-edge.ctdb");
+    defer std.testing.allocator.free(path);
+    return Reader.open(allocator, path);
+}
+
+fn warmCachedPageEdge(reader: *Reader, handle: SeriesHandle) !void {
+    var timestamps: [1]i64 = undefined;
+    var values: [1]f64 = undefined;
+    try std.testing.expectEqual(@as(usize, 1), try reader.rangePreparedInto(
+        handle,
+        -10,
+        -10,
+        &timestamps,
+        &values,
+    ));
+    try std.testing.expectEqual(@as(i64, -10), timestamps[0]);
+    try std.testing.expectEqual(@as(f64, 1), values[0]);
+}
+
+test "mapped cached page range validates every authenticated edge" {
+    for ([_]Codec{ .raw, .compressed }) |codec| {
+        var temporary = std.testing.tmpDir(.{});
+        defer temporary.cleanup();
+        try writeCachedPageEdgeFixture(temporary.dir, codec, true);
+        var reader = try openCachedPageEdgeFixture(temporary.dir, std.testing.allocator);
+        defer reader.close();
+        try std.testing.expectEqual(@as(u64, 3), reader.generation);
+        try std.testing.expect(reader.mapping != null);
+        const handle = try reader.prepare("signal");
+        var timestamps: [1]i64 = undefined;
+        var values: [1]f64 = undefined;
+
+        // A cold edge already fails: the regression concerns the cache hit.
+        try std.testing.expectError(error.InvalidDatabase, reader.rangePreparedInto(
+            handle,
+            10,
+            15,
+            &timestamps,
+            &values,
+        ));
+        try warmCachedPageEdge(&reader, handle);
+        try std.testing.expectError(error.InvalidDatabase, reader.rangePreparedInto(
+            handle,
+            10,
+            15,
+            &timestamps,
+            &values,
+        ));
+        var points: [1]Point = undefined;
+        try std.testing.expectError(error.InvalidDatabase, reader.rangePreparedPoints(handle, 10, 15, &points));
+        try std.testing.expectError(error.InvalidDatabase, reader.range("signal", 10, 15, null));
+        try std.testing.expectError(error.InvalidDatabase, reader.borrowRawPage(handle, 10));
+        try warmCachedPageEdge(&reader, handle);
+    }
+}
+
+test "mapped cached page cursor validates every authenticated edge" {
+    for ([_]Codec{ .raw, .compressed }) |codec| {
+        var temporary = std.testing.tmpDir(.{});
+        defer temporary.cleanup();
+        try writeCachedPageEdgeFixture(temporary.dir, codec, true);
+        var reader = try openCachedPageEdgeFixture(temporary.dir, std.testing.allocator);
+        defer reader.close();
+        try std.testing.expectEqual(@as(u64, 3), reader.generation);
+        const handle = try reader.prepare("signal");
+        var cursor = try reader.cursorPrepared(handle, -10, 20);
+        var timestamps: [1]i64 = undefined;
+        var values: [1]f64 = undefined;
+        try std.testing.expectEqual(@as(usize, 1), try reader.cursorNext(&cursor, &timestamps, &values));
+        try std.testing.expectEqual(@as(i64, -10), timestamps[0]);
+        try std.testing.expectEqual(@as(f64, 1), values[0]);
+        // The cursor itself warms the first page before selecting the false edge.
+        try std.testing.expectError(error.InvalidDatabase, reader.cursorNext(&cursor, &timestamps, &values));
+    }
+}
+
+test "mapped cached page partial aggregate validates every authenticated edge" {
+    for ([_]Codec{ .raw, .compressed }) |codec| {
+        var temporary = std.testing.tmpDir(.{});
+        defer temporary.cleanup();
+        try writeCachedPageEdgeFixture(temporary.dir, codec, true);
+        var reader = try openCachedPageEdgeFixture(temporary.dir, std.testing.allocator);
+        defer reader.close();
+        try std.testing.expectEqual(@as(u64, 3), reader.generation);
+        const handle = try reader.prepare("signal");
+        try warmCachedPageEdge(&reader, handle);
+        // [10,15] only partly covers [10,20], so this loads rather than summarizes.
+        try std.testing.expectError(error.InvalidDatabase, reader.aggregatePrepared(handle, 10, 15));
+    }
+}
+
+test "mapped cached page matching edges preserve bounded allocation-free reads" {
+    for ([_]Codec{ .raw, .compressed }) |codec| {
+        var temporary = std.testing.tmpDir(.{});
+        defer temporary.cleanup();
+        try writeCachedPageEdgeFixture(temporary.dir, codec, false);
+        var allocations = std.testing.FailingAllocator.init(std.testing.allocator, .{});
+        var reader = try openCachedPageEdgeFixture(temporary.dir, allocations.allocator());
+        defer reader.close();
+        const handle = try reader.prepare("signal");
+        allocations.fail_index = allocations.alloc_index;
+        allocations.resize_fail_index = allocations.resize_index;
+        try warmCachedPageEdge(&reader, handle);
+
+        var timestamps: [2]i64 = undefined;
+        var values: [2]f64 = undefined;
+        for (0..3) |capacity| {
+            try std.testing.expectEqual(@as(usize, 2), try reader.rangePreparedInto(
+                handle,
+                10,
+                20,
+                timestamps[0..capacity],
+                values[0..capacity],
+            ));
+            try std.testing.expectEqualSlices(i64, (&[_]i64{ 10, 20 })[0..capacity], timestamps[0..capacity]);
+            try std.testing.expectEqualSlices(f64, (&[_]f64{ 2, 3 })[0..capacity], values[0..capacity]);
+        }
+        try std.testing.expectEqual(@as(usize, 1), try reader.range("signal", 10, 15, null));
+        const aggregate = try reader.aggregatePrepared(handle, 10, 15);
+        try std.testing.expectEqual(@as(u64, 1), aggregate.count);
+        try std.testing.expectEqual(@as(f64, 2), aggregate.sum);
+        if (codec == .raw) {
+            const borrowed = try reader.borrowRawPage(handle, 10);
+            try std.testing.expectEqualSlices(i64, &.{ 10, 20 }, borrowed.timestamps);
+            try std.testing.expectEqualSlices(f64, &.{ 2, 3 }, borrowed.values);
+        } else {
+            try std.testing.expectError(error.PageNotRaw, reader.borrowRawPage(handle, 10));
+        }
+        var cursor = try reader.cursorPrepared(handle, -10, 20);
+        try std.testing.expectEqual(@as(usize, 2), try reader.cursorNext(&cursor, &timestamps, &values));
+        try std.testing.expectEqualSlices(i64, &.{ -10, 10 }, &timestamps);
+        try std.testing.expectEqualSlices(f64, &.{ 1, 2 }, &values);
+        try std.testing.expectEqual(@as(usize, 1), try reader.cursorNext(&cursor, &timestamps, &values));
+        try std.testing.expectEqual(@as(i64, 20), timestamps[0]);
+        try std.testing.expectEqual(@as(f64, 3), values[0]);
+        try std.testing.expectEqual(@as(usize, 0), try reader.cursorNext(&cursor, &timestamps, &values));
+        try std.testing.expect(!allocations.has_induced_failure);
+    }
 }
