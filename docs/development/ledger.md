@@ -57,3 +57,50 @@ workload identities and distinguish inline code from comments; failing
 synthetic cases are retained as developer-tool regressions. The next step is
 to choose a frozen 3.0 capability contract or measured bottleneck, rather than
 infer an optimization win from successful infrastructure checks.
+
+## 2026-10-02 — maintenance release gates and cached edges
+
+The first 2.1 candidate native workflow stopped in documentation fixtures:
+macOS resolves `/tmp` through `/private/tmp`, but the test root was not
+canonicalized. [PR #6](https://github.com/hamzaplojovic/chronotail/pull/6)
+resolves that fixture root without changing checker behavior. Independent
+exact-head review and all Required CI jobs passed before its reviewed-head
+merge at `630c43c9d4b57a562c4fc55c0151a9e9fc0b0c3f`.
+
+The [next native candidate run](https://github.com/hamzaplojovic/chronotail/actions/runs/37065246113)
+at `eeb8881f5029fc2c1b0134944b1ec15807a7503d` passed 72 developer-tool tests,
+client checks and 1,000 simulator seeds/100M operations with zero invariant
+failures, then stopped before profiling: macOS Bash rejected an empty argument
+array under `set -u`. [PR #7](https://github.com/hamzaplojovic/chronotail/pull/7)
+uses positional arguments and tests exact full/quick dispatch with a stub tool.
+Independent review and all Required CI jobs passed before the reviewed-head
+merge at `b9bcb74d7504d381bd23cc48752f852d831c2f2f`. The failed candidate
+did not complete the profile or artifact gates and did not publish a release.
+
+A separate authenticated immutable-file regression exposed mapped-page cache
+hits returning by pointer identity without rechecking the selected parent
+entry's series and summary. Cold reads rejected the conflicting entry, but
+after warming another edge, range/cursor returned zero and partial aggregate
+returned empty instead of `InvalidDatabase`. CT-008 tracks the smallest
+cache-hit edge-validation correction and its independent review; publication
+is held until that concern and full final-candidate native gates are resolved.
+The fixture re-signs the index, manifest and newest root before opening a
+mapped reader; no mutation of mapped bytes or catalog injection is required.
+
+[PR #8](https://github.com/hamzaplojovic/chronotail/pull/8) adds a fixed
+series/summary comparison on cache hits. Four focused raw/compressed tests,
+all three local modes and 100 seeds/10M deterministic operations passed at
+unchanged source, with zero invariant failures. Independent correctness and
+resource reviews matched `dded7355b4d35f93e9026f452c157f3ca6d64ff3`;
+all Required CI jobs passed before its reviewed-head merge at
+`1fb2ea8e980828466aa58052cdf88f0932efc3cc`. This resolves the cached-edge
+source hold; final-candidate full native validation remains a release gate.
+
+The retained compressed-reader investigation remains unresolved: report rows,
+storage/allocation fields and operation counts reconcile, while six dense/smooth
+copied-range throughput deficits of roughly 4–12% recur in the two quick
+captures. Generated-code/layout differences are a hypothesis, not attribution.
+The all-phase page intervention and identical-binary baseline self-control are
+planned separately. No production optimization, speedup or universal
+non-regression claim is supported by this stage. Additive Python streaming and
+Zig lookup remain on the next-release branch, outside the frozen 2.1 candidate.
