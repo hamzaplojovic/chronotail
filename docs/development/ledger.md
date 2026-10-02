@@ -87,6 +87,15 @@ is held until that concern and full final-candidate native gates are resolved.
 The fixture re-signs the index, manifest and newest root before opening a
 mapped reader; no mutation of mapped bytes or catalog injection is required.
 
+[PR #8](https://github.com/hamzaplojovic/chronotail/pull/8) adds a fixed
+series/summary comparison on cache hits. Four focused raw/compressed tests,
+all three local modes and 100 seeds/10M deterministic operations passed at
+unchanged source, with zero invariant failures. Independent correctness and
+resource reviews matched `dded7355b4d35f93e9026f452c157f3ca6d64ff3`;
+all Required CI jobs passed before its reviewed-head merge at
+`1fb2ea8e980828466aa58052cdf88f0932efc3cc`. This resolves the cached-edge
+source hold; final-candidate full native validation remains a release gate.
+
 The retained compressed-reader investigation remains unresolved: report rows,
 storage/allocation fields and operation counts reconcile, while six dense/smooth
 copied-range throughput deficits of roughly 4–12% recur in the two quick
