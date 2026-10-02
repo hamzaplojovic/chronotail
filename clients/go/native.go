@@ -179,6 +179,42 @@ func prepareSeriesNative(handle nativeHandle, series string) (nativeSeries, erro
 	return prepared, status(code)
 }
 
+func lookupLimit(maxDistance *uint64) (C.uint8_t, C.uint64_t) {
+	if maxDistance == nil {
+		return 0, 0
+	}
+	return 1, C.uint64_t(*maxDistance)
+}
+
+func lookupResult(code C.int, found C.uint8_t, point *C.ct_point) (Point, bool, error) {
+	if err := status(code); err != nil {
+		return Point{}, false, err
+	}
+	if found == 0 {
+		return Point{}, false, nil
+	}
+	return Point{Timestamp: int64(point.timestamp), Value: float64(point.value)}, true, nil
+}
+
+func lookupNative(handle nativeHandle, series string, timestamp int64, mode LookupMode, maxDistance *uint64) (Point, bool, error) {
+	hasLimit, distance := lookupLimit(maxDistance)
+	var point C.ct_point
+	var found C.uint8_t
+	code := C.ct_lookup(handle, stringPointer(series), C.size_t(len(series)),
+		C.int64_t(timestamp), C.uint8_t(mode), hasLimit, distance, &point, &found)
+	runtime.KeepAlive(series)
+	return lookupResult(code, found, &point)
+}
+
+func lookupPreparedNative(handle nativeHandle, prepared nativeSeries, timestamp int64, mode LookupMode, maxDistance *uint64) (Point, bool, error) {
+	hasLimit, distance := lookupLimit(maxDistance)
+	var point C.ct_point
+	var found C.uint8_t
+	code := C.ct_lookup_prepared(handle, prepared, C.int64_t(timestamp),
+		C.uint8_t(mode), hasLimit, distance, &point, &found)
+	return lookupResult(code, found, &point)
+}
+
 func rangePreparedNative(handle nativeHandle, prepared nativeSeries, start, end int64, timestamps []int64, values []float64) (int, error) {
 	var count C.size_t
 	code := C.ct_range_prepared(

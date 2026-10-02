@@ -333,6 +333,81 @@ export fn ct_prepare_series(
     return ok;
 }
 
+// The public byte constants are independent of the Zig enum's ordinal.
+fn lookupMode(value: u8) ?chronotail.LookupMode {
+    return switch (value) {
+        0 => .exact,
+        1 => .predecessor,
+        2 => .successor,
+        3 => .nearest,
+        else => null,
+    };
+}
+
+export fn ct_lookup(
+    handle_pointer: ?*anyopaque,
+    series: ?[*]const u8,
+    series_len: usize,
+    timestamp: i64,
+    mode_value: u8,
+    has_limit: u8,
+    max_distance: u64,
+    out: ?*CPoint,
+    found: ?*u8,
+) callconv(.c) c_int {
+    if (found) |available| available.* = 0;
+    const output = out orelse return invalid_argument;
+    const output_found = found orelse return invalid_argument;
+    const mode = lookupMode(mode_value) orelse return invalid_argument;
+    if (has_limit > 1) return invalid_argument;
+    const name = bytes(series, series_len) orelse return invalid_argument;
+    const handle = getHandle(handle_pointer) orelse return invalid_argument;
+    const reader = switch (handle.state) {
+        .reader => |*state| state,
+        else => return wrong_handle,
+    };
+    const point = reader.lookup(name, timestamp, mode, if (has_limit == 1) max_distance else null) catch |err|
+        return statusFromError(err);
+    if (point) |value| {
+        output.* = .{ .timestamp = value.timestamp, .value = value.value };
+        output_found.* = 1;
+    }
+    return ok;
+}
+
+export fn ct_lookup_prepared(
+    handle_pointer: ?*anyopaque,
+    prepared: CSeriesHandle,
+    timestamp: i64,
+    mode_value: u8,
+    has_limit: u8,
+    max_distance: u64,
+    out: ?*CPoint,
+    found: ?*u8,
+) callconv(.c) c_int {
+    if (found) |available| available.* = 0;
+    const output = out orelse return invalid_argument;
+    const output_found = found orelse return invalid_argument;
+    const mode = lookupMode(mode_value) orelse return invalid_argument;
+    if (has_limit > 1 or prepared.reserved != 0) return invalid_argument;
+    const handle = getHandle(handle_pointer) orelse return invalid_argument;
+    const reader = switch (handle.state) {
+        .reader => |*state| state,
+        else => return wrong_handle,
+    };
+    const point = reader.lookupPrepared(
+        .{ .index = prepared.index, .generation = prepared.generation },
+        timestamp,
+        mode,
+        if (has_limit == 1) max_distance else null,
+    ) catch |err| return statusFromError(err);
+    if (point) |value| {
+        output.* = .{ .timestamp = value.timestamp, .value = value.value };
+        output_found.* = 1;
+    }
+    return ok;
+}
+
 export fn ct_range_prepared(
     handle_pointer: ?*anyopaque,
     prepared: CSeriesHandle,

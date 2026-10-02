@@ -111,6 +111,44 @@ array of interleaved `ct_point` values. These variants have the same inclusive
 range and truncation contract, but avoid separate column arrays and a later
 structure-of-arrays to array-of-structures conversion.
 
+## Temporal lookup (2.2 development)
+
+The additive `ct_lookup`/`ct_lookup_prepared` pair requires a matching native
+library exporting both symbols. It keeps ABI version 2 and existing layouts;
+2.1 release libraries do not provide lookup.
+
+```c
+ct_point point; /* Only inspect after CT_OK and found == 1. */
+uint8_t found = 0;
+check(ct_lookup(reader, "pressure", 8, observed_at,
+                CT_LOOKUP_PREDECESSOR, 1, UINT64_C(1000), &point, &found),
+      "last known pressure");
+if (found) consume_observation(point.timestamp, point.value);
+else display_missing();
+```
+
+`CT_LOOKUP_EXACT` requires equality. Predecessor means at or before; successor
+means at or after. Nearest chooses the closer stored sample, with predecessor
+winning ties. `has_limit` is exactly 0 or 1: zero ignores `max_distance`, one
+applies an inclusive unsigned distance in caller-defined timestamp units.
+Zero distance accepts only equality; `UINT64_MAX` covers even `INT64_MIN` to
+`INT64_MAX`. No filling, interpolation or unit conversion occurs.
+
+Both aligned writable output pointers are required and must not overlap each
+other or inputs. Available `found` is reset to zero before validation; `out`
+remains untouched on missing, rejected distance or error. Read it only on
+`CT_OK` and found 1. Missing is successful found 0, distinct from a zero value;
+unknown series, stale handles and authentication failures remain errors.
+Copied points preserve timestamp and double bits and survive refresh/close.
+
+Prepared lookup takes the existing `ct_series_handle` by value, with reserved
+zero, and must use its original reader. Changed refresh invalidates it;
+unchanged or failed refresh does not. C handles encode generation/index,
+not reader identity; Go/Python enforce owner identity. Discard reader pointers
+after close; calling with a freed pointer is outside the C handle contract.
+See the [full lookup contract](../temporal-lookup-clients.md) for validation
+precedence and byte-mode/output/error details.
+
 ## Bounded cursor
 
 ```c
@@ -189,6 +227,7 @@ through the CLI and Zig API, not the C ABI.
 | `ct_range` | Copies a named-series prefix and returns total required capacity. |
 | `ct_prepare_series` | Resolves a series to a generation-bound handle. |
 | `ct_range_prepared` | Performs the copied range using a prepared handle. |
+| `ct_lookup` / `ct_lookup_prepared` | Selects a copied temporal point with explicit found and optional unsigned tolerance (2.2 development). |
 | `ct_range_points` / `ct_range_points_prepared` | Copies directly into interleaved `ct_point` values. |
 | `ct_aggregate` / `ct_aggregate_prepared` | Computes count/min/max/sum/first/last. |
 | `ct_cursor_init` / `ct_cursor_next` | Streams a range through fixed caller buffers. |

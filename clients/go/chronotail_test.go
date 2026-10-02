@@ -117,6 +117,206 @@ func BenchmarkRangeMaterialization(b *testing.B) {
 	}
 }
 
+func lookupDistance(a, b int64) uint64 {
+	x, y := uint64(a)^(uint64(1)<<63), uint64(b)^(uint64(1)<<63)
+	if x > y {
+		return x - y
+	}
+	return y - x
+}
+
+// Independent sorted-list model; all arithmetic stays in unsigned rank space.
+func referenceLookup(points []Point, target int64, mode LookupMode, limit *uint64) (Point, bool) {
+	var result Point
+	found := false
+	best := uint64(math.MaxUint64)
+	for _, point := range points {
+		if mode == LookupExact && point.Timestamp != target ||
+			mode == LookupPredecessor && point.Timestamp > target ||
+			mode == LookupSuccessor && point.Timestamp < target {
+			continue
+		}
+		distance := lookupDistance(point.Timestamp, target)
+		if !found || distance < best {
+			result, found, best = point, true, distance
+		}
+	}
+	if limit != nil && best > *limit {
+		return Point{}, false
+	}
+	return result, found
+}
+
+func checkLookupTarget(t *testing.T, r *Reader, series *Series, name string, points []Point, target int64) {
+	t.Helper()
+	for mode := LookupExact; mode <= LookupNearest; mode++ {
+		limits := []*uint64{nil}
+		for _, limit := range []uint64{0, 1, math.MaxUint64, math.MaxUint64 - 1, uint64(1) << 63} {
+			value := limit
+			limits = append(limits, &value)
+		}
+		selected, found := referenceLookup(points, target, mode, nil)
+		if found {
+			distance := lookupDistance(selected.Timestamp, target)
+			limits = append(limits, &distance)
+			if distance > 0 {
+				value := distance - 1
+				limits = append(limits, &value)
+			}
+			if distance < math.MaxUint64 {
+				value := distance + 1
+				limits = append(limits, &value)
+			}
+		}
+		for _, limit := range limits {
+			expected, wantFound := referenceLookup(points, target, mode, limit)
+			for form := 0; form < 3; form++ {
+				var got Point
+				var found bool
+				var err error
+				switch form {
+				case 0:
+					got, found, err = r.Lookup(name, target, mode, limit)
+				case 1:
+					got, found, err = r.LookupPrepared(series, target, mode, limit)
+				case 2:
+					got, found, err = series.Lookup(target, mode, limit)
+				}
+				if err != nil || found != wantFound || got.Timestamp != expected.Timestamp ||
+					math.Float64bits(got.Value) != math.Float64bits(expected.Value) {
+					t.Fatalf("lookup target=%d mode=%d form=%d: got %#v %v %v, want %#v %v", target, mode, form, got, found, err, expected, wantFound)
+				}
+			}
+		}
+	}
+}
+
+func TestTemporalLookupParity(t *testing.T) {
+	for _, codec := range []Codec{CodecRaw, CodecCompressed} {
+		t.Run(fmt.Sprintf("codec-%d", codec), func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "lookup.ctdb")
+			writer, err := OpenWriter(path, codec)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer writer.Close()
+			times := []int64{math.MinInt64, math.MinInt64 + 1, -31, -10, 0, 10, 47, math.MaxInt64 - 1, math.MaxInt64}
+			bits := []uint64{0, 0x8000000000000000, 1, 0x7ff0000000000000, 0xfff0000000000000, 0x7ff8000000000123, 0xfff8000000000456, 0x3ff0000000000000, 0x7fefffffffffffff}
+			values := make([]float64, len(bits))
+			points := make([]Point, len(bits))
+			for i, bits := range bits {
+				values[i] = math.Float64frombits(bits)
+				points[i] = Point{times[i], values[i]}
+			}
+			if err := writer.Append("signal", times, values); err != nil {
+				t.Fatal(err)
+			}
+			if err := writer.Append("single", times[:1], values[:1]); err != nil {
+				t.Fatal(err)
+			}
+			many := make([]Point, 132)
+			for i := 0; i < len(many); i += 3 {
+				for j := 0; j < 3; j++ {
+					many[i+j] = Point{int64(i+j)*11 - 500, float64(i + j)}
+				}
+				if err := writer.Append("pages", []int64{many[i].Timestamp, many[i+1].Timestamp, many[i+2].Timestamp}, []float64{many[i].Value, many[i+1].Value, many[i+2].Value}); err != nil {
+					t.Fatal(err)
+				}
+				if err := writer.Checkpoint(DurabilityMemory); err != nil {
+					t.Fatal(err)
+				}
+			}
+			reader, err := OpenReader(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer reader.Close()
+			series, err := reader.PrepareSeries("signal")
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, target := range []int64{math.MinInt64, math.MinInt64 + 2, -32, -31, -20, -11, -10, -5, 0, 5, 11, 46, 48, math.MaxInt64} {
+				checkLookupTarget(t, reader, series, "signal", points, target)
+			}
+			single, err := reader.PrepareSeries("single")
+			if err != nil {
+				t.Fatal(err)
+			}
+			checkLookupTarget(t, reader, single, "single", points[:1], math.MaxInt64)
+			pages, err := reader.PrepareSeries("pages")
+			if err != nil {
+				t.Fatal(err)
+			}
+			for i := 0; i < len(many); i += 3 {
+				checkLookupTarget(t, reader, pages, "pages", many, many[i].Timestamp-1)
+				checkLookupTarget(t, reader, pages, "pages", many, many[i].Timestamp)
+			}
+			if changed, err := reader.Refresh(); changed || err != nil {
+				t.Fatalf("unchanged refresh: %v %v", changed, err)
+			}
+			copied, found, err := series.Lookup(math.MinInt64, LookupExact, nil)
+			if err != nil || !found {
+				t.Fatalf("copy before close: %v %v", found, err)
+			}
+			other, err := OpenReader(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer other.Close()
+			if _, found, err := other.LookupPrepared(series, 0, LookupNearest, nil); found || !errors.Is(err, ErrWrongHandle) {
+				t.Fatalf("foreign: %v %v", found, err)
+			}
+			zero := uint64(0)
+			if _, found, err := reader.Lookup("unknown", 0, LookupExact, &zero); found || !errors.Is(err, ErrInvalidArgument) {
+				t.Fatalf("unknown: %v %v", found, err)
+			}
+			for _, mode := range []LookupMode{4, 255} {
+				if _, found, err := reader.Lookup("signal", 0, mode, nil); found || !errors.Is(err, ErrInvalidArgument) {
+					t.Fatalf("mode: %v %v", found, err)
+				}
+			}
+			if _, _, err := reader.Lookup("", 0, LookupExact, nil); !errors.Is(err, ErrEmptySeries) {
+				t.Fatal(err)
+			}
+			if err := writer.Append("pages", []int64{many[len(many)-1].Timestamp + 11}, []float64{0}); err != nil {
+				t.Fatal(err)
+			}
+			if err := writer.Checkpoint(DurabilityMemory); err != nil {
+				t.Fatal(err)
+			}
+			if changed, err := reader.Refresh(); !changed || err != nil {
+				t.Fatalf("changed refresh: %v %v", changed, err)
+			}
+			if _, found, err := reader.LookupPrepared(pages, math.MinInt64, LookupExact, &zero); found || !errors.Is(err, ErrStaleSeries) {
+				t.Fatalf("stale: %v %v", found, err)
+			}
+			if err := reader.Close(); err != nil {
+				t.Fatal(err)
+			}
+			if copied.Timestamp != math.MinInt64 || math.Float64bits(copied.Value) != 0 {
+				t.Fatal("copied point changed")
+			}
+			if _, found, err := series.Lookup(0, LookupNearest, nil); found || !errors.Is(err, ErrClosed) {
+				t.Fatalf("closed series: %v %v", found, err)
+			}
+		})
+	}
+}
+
+func TestTemporalLookupNilHandles(t *testing.T) {
+	var reader *Reader
+	var series *Series
+	if _, found, err := reader.Lookup("s", 0, LookupExact, nil); found || !errors.Is(err, ErrClosed) {
+		t.Fatal(found, err)
+	}
+	if _, found, err := reader.LookupPrepared(series, 0, LookupExact, nil); found || !errors.Is(err, ErrClosed) {
+		t.Fatal(found, err)
+	}
+	if _, found, err := series.Lookup(0, LookupExact, nil); found || !errors.Is(err, ErrClosed) {
+		t.Fatal(found, err)
+	}
+}
+
 func TestABIVersion(t *testing.T) {
 	if got := ABIVersion(); got != expectedABIVersion {
 		t.Fatalf("ABIVersion() = %d, want %d", got, expectedABIVersion)

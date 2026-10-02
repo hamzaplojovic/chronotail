@@ -73,6 +73,13 @@ enum {
     CT_DURABILITY_DISK = 1
 };
 
+enum {
+    CT_LOOKUP_EXACT = 0,
+    CT_LOOKUP_PREDECESSOR = 1,
+    CT_LOOKUP_SUCCESSOR = 2,
+    CT_LOOKUP_NEAREST = 3
+};
+
 uint32_t ct_abi_version(void);
 const char *ct_error_string(int code);
 
@@ -122,6 +129,35 @@ int ct_prepare_series(
     const char *series,
     size_t series_len,
     ct_series_handle *out);
+
+/* Additive ABI-v2 lookup (native 2.2+). Predecessor/successor are inclusive;
+   nearest ties select the predecessor. mode accepts only CT_LOOKUP_* (0..3).
+   has_limit accepts only 0/1: 0 ignores max_distance; 1 applies an inclusive
+   unsigned distance, including UINT64_MAX across the full int64_t domain.
+
+   Both aligned writable outputs are required and must not overlap inputs or
+   each other. Available *found is reset to 0 before validation. On CT_OK with
+   found=1, out is the original copied point (exact double bits). On missing,
+   tolerance rejection or any error, out is untouched; read it ONLY on CT_OK
+   with found=1. Missing returns CT_OK, never CT_TIMESTAMP_NOT_FOUND.
+
+   Scalar/output/name validation precedes reader kind and series resolution.
+   Unknown/stale series and database failures remain errors, even with limit 0.
+   Prepared handles must be used with their original reader; reserved is zero.
+   Discard freed reader pointers after ct_close; null is invalid, not missing.
+   Calls allocate no memory and retain no caller storage. */
+int ct_lookup(
+    ct_handle *reader,
+    const char *series, size_t series_len,
+    int64_t timestamp, uint8_t mode,
+    uint8_t has_limit, uint64_t max_distance,
+    ct_point *out, uint8_t *found);
+
+int ct_lookup_prepared(
+    ct_handle *reader, ct_series_handle series,
+    int64_t timestamp, uint8_t mode,
+    uint8_t has_limit, uint64_t max_distance,
+    ct_point *out, uint8_t *found);
 
 int ct_range_prepared(
     ct_handle *reader,

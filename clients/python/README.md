@@ -33,6 +33,28 @@ Writable `array('q')` and `array('d')` values use the direct buffer path.
 Readers hold immutable snapshots and adopt newer complete checkpoints only when
 `refresh()` is called.
 
+## Last-known values in 2.2 development
+
+```python
+from chronotail import LookupMode
+
+with chronotail.Reader("metrics.ctdb") as reader:
+    point = reader.lookup("cpu", 4, LookupMode.PREDECESSOR, max_distance=1)
+    print(point)  # (3, 42.0); None when no sample meets the inclusive age limit.
+    cpu = reader.prepare("cpu")
+    print(reader.lookup_prepared(cpu, 2, LookupMode.NEAREST))
+```
+
+`EXACT`, `PREDECESSOR`, `SUCCESSOR` and `NEAREST` return original copied tuples;
+directions are inclusive and nearest ties choose the earlier point. Optional
+distance is an inclusive unsigned integer in your timestamp units. Missing is
+`None`, distinct from zero; timestamp/value bits remain exact. Prepared handles
+belong to their reader snapshot; changed refresh, close and wrong owner produce
+errors. Lookup requires a matching library exporting both new symbols; Python
+imports and existing APIs still work on older ABI2 libraries, with clear
+call-time `NotImplementedError` for unsupported lookup and no scanning fallback.
+The 2.1 wheel above does not contain this development surface.
+
 ## Stream a bounded range
 
 This API targets the next additive release and is available in development
