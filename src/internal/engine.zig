@@ -29,6 +29,54 @@ pub const QueryProfile = struct {
 pub const SeriesHandle = struct { index: u32, generation: u64 };
 pub const Point = page.Point;
 
+pub const LookupMode = enum { exact, predecessor, successor, nearest };
+const LookupDirection = enum { predecessor, successor };
+
+fn timestampDistance(a: i64, b: i64) u64 {
+    const difference = @as(i128, a) - @as(i128, b);
+    return @intCast(if (difference < 0) -difference else difference);
+}
+
+// Both decoded nodes and mapped views have authenticated, ordered summaries.
+fn lookupEntryAt(node: anytype, entry_index: usize) index.Entry {
+    if (comptime @TypeOf(node.*) == index.Node) {
+        return node.entries[entry_index];
+    } else {
+        return node.entryAt(entry_index);
+    }
+}
+
+fn lookupEntryIndex(node: anytype, timestamp: i64, direction: LookupDirection) ?usize {
+    var selected: usize = node.lowerBound(timestamp);
+    switch (direction) {
+        .successor => if (selected == node.count) return null,
+        .predecessor => {
+            if (selected == node.count) return selected - 1;
+            if (lookupEntryAt(node, selected).summary.timestamp_min > timestamp) {
+                if (selected == 0) return null;
+                selected -= 1;
+            }
+        },
+    }
+    return selected;
+}
+
+fn lookupPagePoint(view: page.View, timestamp: i64, direction: LookupDirection) ?Point {
+    var selected = view.lowerBound(timestamp);
+    switch (direction) {
+        .successor => if (selected == view.statistics.count) return null,
+        .predecessor => {
+            if (selected == view.statistics.count) {
+                selected -= 1;
+            } else if (view.timestampAt(selected) > timestamp) {
+                if (selected == 0) return null;
+                selected -= 1;
+            }
+        },
+    }
+    return .{ .timestamp = view.timestampAt(selected), .value = view.valueAt(selected) };
+}
+
 pub const BorrowedRawPage = struct {
     timestamps: []const i64,
     values: []const f64,
@@ -1094,6 +1142,104 @@ pub fn ReaderFor(comptime File: type) type {
             const entry = try self.resolve(handle);
             try self.verifySeriesRoot(handle.index, entry);
             return entry.summary.timestamp_max;
+        }
+
+        /// Return one original stored sample; max_distance is inclusive in timestamp units.
+        pub fn lookup(
+            self: *Self,
+            name: []const u8,
+            timestamp: i64,
+            mode: LookupMode,
+            max_distance: ?u64,
+        ) !?Point {
+            return self.lookupPrepared(try self.prepare(name), timestamp, mode, max_distance);
+        }
+
+        /// Prepared handles remain generation-bound, including for missing results.
+        pub fn lookupPrepared(
+            self: *Self,
+            handle: SeriesHandle,
+            timestamp: i64,
+            mode: LookupMode,
+            max_distance: ?u64,
+        ) !?Point {
+            const series_entry = try self.resolve(handle);
+            const selected: ?Point = switch (mode) {
+                .exact => blk: {
+                    const point = try self.lookupDirectional(series_entry, handle.index, timestamp, .successor);
+                    break :blk if (point != null and point.?.timestamp == timestamp) point else null;
+                },
+                .predecessor => try self.lookupDirectional(series_entry, handle.index, timestamp, .predecessor),
+                .successor => try self.lookupDirectional(series_entry, handle.index, timestamp, .successor),
+                .nearest => blk: {
+                    const before = try self.lookupDirectional(series_entry, handle.index, timestamp, .predecessor);
+                    if (before) |point| if (point.timestamp == timestamp) break :blk before;
+                    const after = try self.lookupDirectional(series_entry, handle.index, timestamp, .successor);
+                    if (before == null) break :blk after;
+                    if (after == null) break :blk before;
+                    break :blk if (timestampDistance(before.?.timestamp, timestamp) <=
+                        timestampDistance(after.?.timestamp, timestamp)) before else after;
+                },
+            };
+            const point = selected orelse return null;
+            if (max_distance) |limit| if (timestampDistance(point.timestamp, timestamp) > limit)
+                return null;
+            return point;
+        }
+
+        fn lookupDirectional(
+            self: *Self,
+            series_entry: *const manifest.Series,
+            series_index: u32,
+            timestamp: i64,
+            direction: LookupDirection,
+        ) !?Point {
+            if (comptime File == std.fs.File) if (self.mapping != null) {
+                const runtime = &self.series_runtime.items[series_index];
+                var node = try self.loadSeriesRoot(runtime, series_entry);
+                var depth: usize = 1;
+                while (true) {
+                    const selected = lookupEntryIndex(&node, timestamp, direction) orelse return null;
+                    const entry = node.entryAt(selected);
+                    if (node.level == 0) {
+                        const view = try self.loadSeriesPage(runtime, series_entry.id, entry);
+                        // Cache identity authenticates bytes, not this parent edge.
+                        if (view.series_id != series_entry.id or
+                            !summaryEqual(index.Summary.fromPage(view.statistics), entry.summary))
+                            return error.InvalidDatabase;
+                        return lookupPagePoint(view, timestamp, direction);
+                    }
+                    if (depth == index.height_max) return error.InvalidDatabase;
+                    const child = try self.loadMappedIndex(entry.pointer);
+                    if (child.series_id != series_entry.id or child.level + 1 != node.level or
+                        !summaryEqual(child.summary, entry.summary)) return error.InvalidDatabase;
+                    if (child.level == 0) runtime.active_leaf = child;
+                    node = child;
+                    depth += 1;
+                }
+            };
+            var node = try self.loadNode(series_entry.root);
+            if (node.series_id != series_entry.id or
+                !summaryEqual(node.summary, series_entry.summary)) return error.InvalidDatabase;
+            var depth: usize = 1;
+            while (true) {
+                const selected = lookupEntryIndex(&node, timestamp, direction) orelse return null;
+                const entry = node.entries[selected];
+                if (node.level == 0) {
+                    var scratch: [format.page_size]u8 = undefined;
+                    const view = try self.loadPage(entry.pointer, &scratch);
+                    if (view.series_id != series_entry.id or
+                        !summaryEqual(index.Summary.fromPage(view.statistics), entry.summary))
+                        return error.InvalidDatabase;
+                    return lookupPagePoint(view, timestamp, direction);
+                }
+                if (depth == index.height_max) return error.InvalidDatabase;
+                const child = try self.loadNode(entry.pointer);
+                if (child.series_id != series_entry.id or child.level + 1 != node.level or
+                    !summaryEqual(child.summary, entry.summary)) return error.InvalidDatabase;
+                node = child;
+                depth += 1;
+            }
         }
 
         pub fn codecCounts(self: *Self, name: []const u8) ![2]usize {
@@ -2417,6 +2563,303 @@ test "strict timestamp validation covers vector tails" {
     try std.testing.expect(timestampsStrictlyIncreasing(&.{ 1, 2, 3, 4, 5, 6, 7 }));
     try std.testing.expect(!timestampsStrictlyIncreasing(&.{ 1, 2, 3, 4, 4, 6, 7 }));
     try std.testing.expect(!timestampsStrictlyIncreasing(&.{ 1, 2, 3, 4, 5, 4, 7 }));
+}
+
+// Deliberately linear and independent of index/page search and distance helpers.
+fn referenceLookup(
+    timestamps: []const i64,
+    values: []const f64,
+    target: i64,
+    mode: LookupMode,
+    max_distance: ?u64,
+) ?Point {
+    var result: ?Point = null;
+    var best_distance: i128 = std.math.maxInt(i128);
+    for (timestamps, values) |timestamp, value| {
+        const eligible = switch (mode) {
+            .exact => timestamp == target,
+            .predecessor => timestamp <= target,
+            .successor => timestamp >= target,
+            .nearest => true,
+        };
+        if (!eligible) continue;
+        const delta = @as(i128, timestamp) - target;
+        const distance = if (delta < 0) -delta else delta;
+        // Ascending input plus strict improvement gives predecessor ties.
+        if (distance < best_distance) {
+            best_distance = distance;
+            result = .{ .timestamp = timestamp, .value = value };
+        }
+    }
+    if (max_distance) |limit| if (best_distance > limit) return null;
+    return result;
+}
+
+fn expectLookupPoint(expected: ?Point, actual: ?Point) !void {
+    if (expected) |point| {
+        try std.testing.expect(actual != null);
+        try std.testing.expectEqual(point.timestamp, actual.?.timestamp);
+        try std.testing.expectEqual(@as(u64, @bitCast(point.value)), @as(u64, @bitCast(actual.?.value)));
+    } else {
+        try std.testing.expect(actual == null);
+    }
+}
+
+const LookupTestFile = struct {
+    file: std.fs.File,
+    reads: *usize,
+
+    pub fn getEndPos(self: @This()) !u64 {
+        return self.file.getEndPos();
+    }
+
+    pub fn preadAll(self: @This(), bytes: []u8, offset: u64) !usize {
+        self.reads.* += 1;
+        return self.file.preadAll(bytes, offset);
+    }
+
+    pub fn close(self: @This()) void {
+        self.file.close();
+    }
+};
+
+fn checkLookupTarget(reader: anytype, timestamps: []const i64, values: []const f64, target: i64) !void {
+    const handle = try reader.prepare("signal");
+    const reads_per_path: usize = if (comptime @TypeOf(reader.*) == ReaderFor(LookupTestFile))
+        @as(usize, (try reader.loadNode(reader.series.items[handle.index].root)).level) + 2
+    else
+        0;
+    inline for (std.meta.tags(LookupMode)) |mode| {
+        var limits = [_]?u64{ null, 0, 1, 2, 9, std.math.maxInt(u64), null, null, null };
+        if (referenceLookup(timestamps, values, target, mode, null)) |selected| {
+            const delta = @as(i128, selected.timestamp) - target;
+            const distance: u64 = @intCast(if (delta < 0) -delta else delta);
+            limits[6] = distance;
+            limits[7] = if (distance > 0) distance - 1 else 0;
+            limits[8] = if (distance < std.math.maxInt(u64)) distance + 1 else distance;
+        }
+        for (limits) |limit| {
+            const expected = referenceLookup(timestamps, values, target, mode, limit);
+            if (comptime @TypeOf(reader.*) == ReaderFor(LookupTestFile)) reader.file.reads.* = 0;
+            try expectLookupPoint(expected, try reader.lookupPrepared(handle, target, mode, limit));
+            if (comptime @TypeOf(reader.*) == ReaderFor(LookupTestFile)) {
+                const paths: usize = if (mode == .nearest) 2 else 1;
+                try std.testing.expect(reader.file.reads.* <= paths * reads_per_path);
+            }
+            try expectLookupPoint(expected, try reader.lookup("signal", target, mode, limit));
+        }
+    }
+}
+
+test "temporal lookup reference covers extrema ties missing tolerance and exact value bits" {
+    var temporary = std.testing.tmpDir(.{});
+    defer temporary.cleanup();
+    const timestamps = [_]i64{ std.math.minInt(i64), std.math.minInt(i64) + 1, -100, -10, 0, 10, 100, std.math.maxInt(i64) - 1, std.math.maxInt(i64) };
+    const values = [_]f64{ -0.0, 0.0, -2.5, 42, @bitCast(@as(u64, 1)), 1.5, 7, 3, 9 };
+    const targets = [_]i64{ std.math.minInt(i64), std.math.minInt(i64) + 1, std.math.minInt(i64) + 2, -101, -100, -99, -55, -10, -5, -1, 0, 1, 5, 10, 55, 99, 100, 101, std.math.maxInt(i64) - 2, std.math.maxInt(i64) - 1, std.math.maxInt(i64) };
+    inline for (.{ Codec.raw, Codec.compressed }) |codec| {
+        const filename = if (codec == .raw) "extreme-raw.ctdb" else "extreme-compressed.ctdb";
+        var writer = try Appender.createOn(std.testing.allocator, try temporary.dir.createFile(filename, .{ .read = true }), codec);
+        defer writer.abort();
+        try writer.prepareSeries("unpublished", 1);
+        try writer.appendBatch("signal", &timestamps, &values);
+        try writer.append("single", std.math.minInt(i64), -0.0);
+        try writer.appendBatch("bounded", &.{ -10, 10 }, &.{ 0, 2 });
+        try writer.appendBatch("regular", &.{ -20, -10, 0, 10, 20 }, &.{ 1, 1, 1, 1, 1 });
+        try writer.checkpoint(false);
+        const path = try temporary.dir.realpathAlloc(std.testing.allocator, filename);
+        defer std.testing.allocator.free(path);
+        var failing = std.testing.FailingAllocator.init(std.testing.allocator, .{});
+        var mapped = try Reader.open(failing.allocator(), path);
+        defer mapped.close();
+        var reads: usize = 0;
+        var generic = try ReaderFor(LookupTestFile).openOn(failing.allocator(), .{ .file = try temporary.dir.openFile(filename, .{}), .reads = &reads });
+        defer generic.close();
+        failing.fail_index = failing.alloc_index;
+        failing.resize_fail_index = failing.resize_index;
+        const deallocations = failing.deallocations;
+        for (targets) |target| {
+            try checkLookupTarget(&mapped, &timestamps, &values, target);
+            try checkLookupTarget(&generic, &timestamps, &values, target);
+        }
+        inline for (.{ &mapped, &generic }) |reader| {
+            try std.testing.expectError(error.SeriesNotFound, reader.lookup("unknown", 0, .exact, null));
+            try std.testing.expectError(error.SeriesNotFound, reader.lookup("unpublished", 0, .nearest, null));
+            try std.testing.expectError(error.StaleSeriesHandle, reader.lookupPrepared(.{ .index = std.math.maxInt(u32), .generation = reader.generation }, 0, .nearest, 0));
+            try std.testing.expectError(error.StaleSeriesHandle, reader.lookupPrepared(.{ .index = 0, .generation = reader.generation - 1 }, 0, .exact, 0));
+            try std.testing.expect((try reader.lookup("bounded", -11, .predecessor, null)) == null);
+            try std.testing.expect((try reader.lookup("bounded", 11, .successor, null)) == null);
+            inline for (std.meta.tags(LookupMode)) |mode| {
+                for ([_]i64{ -21, -20, -15, 0, 15, 20, 21 }) |target| {
+                    try expectLookupPoint(referenceLookup(&.{ -20, -10, 0, 10, 20 }, &.{ 1, 1, 1, 1, 1 }, target, mode, null), try reader.lookup("regular", target, mode, null));
+                }
+            }
+            try std.testing.expect((try reader.lookup("single", std.math.maxInt(i64), .predecessor, std.math.maxInt(u64) - 1)) == null);
+            try expectLookupPoint(.{ .timestamp = std.math.minInt(i64), .value = -0.0 }, try reader.lookup("single", std.math.maxInt(i64), .nearest, std.math.maxInt(u64)));
+        }
+        try std.testing.expect(!failing.has_induced_failure);
+        try std.testing.expectEqual(failing.fail_index, failing.alloc_index);
+        try std.testing.expectEqual(failing.resize_fail_index, failing.resize_index);
+        try std.testing.expectEqual(deallocations, failing.deallocations);
+    }
+}
+
+test "temporal lookup crosses pages and index children without scanning history" {
+    var temporary = std.testing.tmpDir(.{});
+    defer temporary.cleanup();
+    const per_page = 131;
+    const pages = index.entry_capacity + 3;
+    var timestamps: [per_page * pages]i64 = undefined;
+    var values: [timestamps.len]f64 = undefined;
+    var timestamp: i64 = -20000;
+    for (&timestamps, &values, 0..) |*stored_timestamp, *value, point_index| {
+        timestamp += @intCast(2 + point_index % 11);
+        stored_timestamp.* = timestamp;
+        value.* = 20 + @as(f64, @floatFromInt(point_index % 100)) * 0.001;
+    }
+    inline for (.{ Codec.raw, Codec.compressed }) |codec| {
+        const filename = if (codec == .raw) "boundary-raw.ctdb" else "boundary-compressed.ctdb";
+        var writer = try Appender.createOn(std.testing.allocator, try temporary.dir.createFile(filename, .{ .read = true }), codec);
+        defer writer.abort();
+        for (0..pages) |page_index| {
+            const start = page_index * per_page;
+            try writer.appendBatch("signal", timestamps[start..][0..per_page], values[start..][0..per_page]);
+            try writer.checkpoint(false);
+        }
+        const path = try temporary.dir.realpathAlloc(std.testing.allocator, filename);
+        defer std.testing.allocator.free(path);
+        var failing = std.testing.FailingAllocator.init(std.testing.allocator, .{});
+        var mapped = try Reader.open(failing.allocator(), path);
+        defer mapped.close();
+        var reads: usize = 0;
+        var generic = try ReaderFor(LookupTestFile).openOn(failing.allocator(), .{ .file = try temporary.dir.openFile(filename, .{}), .reads = &reads });
+        defer generic.close();
+        const root = try generic.loadNode(generic.series.items[0].root);
+        try std.testing.expect(root.level > 0);
+        const codecs = try generic.codecCounts("signal");
+        try std.testing.expectEqual(@as(usize, pages), codecs[if (codec == .raw) 0 else 1]);
+        failing.fail_index = failing.alloc_index;
+        failing.resize_fail_index = failing.resize_index;
+        const deallocations = failing.deallocations;
+        for (0..pages) |page_index| {
+            const first = page_index * per_page;
+            const targets = [_]i64{ timestamps[first] - 1, timestamps[first], timestamps[first] + 1, timestamps[first + 127], timestamps[first + 128] - 1, timestamps[first + 130], timestamps[first + 130] + 1 };
+            for (targets) |target| {
+                try checkLookupTarget(&mapped, &timestamps, &values, target);
+                try checkLookupTarget(&generic, &timestamps, &values, target);
+            }
+        }
+        try std.testing.expect(!failing.has_induced_failure);
+        try std.testing.expectEqual(failing.fail_index, failing.alloc_index);
+        try std.testing.expectEqual(failing.resize_fail_index, failing.resize_index);
+        try std.testing.expectEqual(deallocations, failing.deallocations);
+    }
+}
+
+test "temporal lookup refresh invalidates handles and preserves copied points" {
+    var temporary = std.testing.tmpDir(.{});
+    defer temporary.cleanup();
+    const file = try temporary.dir.createFile("refresh.ctdb", .{ .read = true });
+    var writer = try Appender.createOn(std.testing.allocator, file, .compressed);
+    defer writer.abort();
+    try writer.append("signal", 10, -0.0);
+    try writer.checkpoint(false);
+    const path = try temporary.dir.realpathAlloc(std.testing.allocator, "refresh.ctdb");
+    defer std.testing.allocator.free(path);
+    var mapped = try Reader.open(std.testing.allocator, path);
+    defer mapped.close();
+    var reads: usize = 0;
+    var generic = try ReaderFor(LookupTestFile).openOn(std.testing.allocator, .{ .file = try temporary.dir.openFile("refresh.ctdb", .{}), .reads = &reads });
+    defer generic.close();
+    const mapped_handle = try mapped.prepare("signal");
+    const generic_handle = try generic.prepare("signal");
+    const copied = try mapped.lookupPrepared(mapped_handle, 10, .exact, null);
+    try std.testing.expect(!try mapped.refresh());
+    try std.testing.expect(!try generic.refresh());
+    try writer.append("signal", 20, 2);
+    try writer.checkpoint(false);
+    inline for (.{ &mapped, &generic }, .{ mapped_handle, generic_handle }) |reader, old_handle| {
+        try expectLookupPoint(.{ .timestamp = 10, .value = -0.0 }, try reader.lookup("signal", 20, .nearest, null));
+        try std.testing.expect(try reader.refresh());
+        inline for (std.meta.tags(LookupMode)) |mode| {
+            try std.testing.expectError(error.StaleSeriesHandle, reader.lookupPrepared(old_handle, std.math.minInt(i64), mode, 0));
+        }
+        try checkLookupTarget(reader, &.{ 10, 20 }, &.{ -0.0, 2 }, 15);
+        try checkLookupTarget(reader, &.{ 10, 20 }, &.{ -0.0, 2 }, 20);
+    }
+    try expectLookupPoint(.{ .timestamp = 10, .value = -0.0 }, copied);
+}
+
+test "temporal lookup uses byte cursors for generic unaligned pages and reauthenticates" {
+    var temporary = std.testing.tmpDir(.{});
+    defer temporary.cleanup();
+    var writer = try Appender.createOn(std.testing.allocator, try temporary.dir.createFile("generic.ctdb", .{ .read = true }), .raw);
+    defer writer.abort();
+    try writer.appendBatch("signal", &.{ -10, 0, 10 }, &.{ -0.0, 0, 1.5 });
+    try writer.checkpoint(false);
+    var reads: usize = 0;
+    var reader = try ReaderFor(LookupTestFile).openOn(std.testing.allocator, .{ .file = try temporary.dir.openFile("generic.ctdb", .{}), .reads = &reads });
+    defer reader.close();
+    const handle = try reader.prepare("signal");
+    const series_entry = &reader.series.items[handle.index];
+    var node = try reader.loadNode(series_entry.root);
+    const pointer = node.entries[0].pointer;
+    var buffer: [format.page_size + 8]u8 align(8) = undefined;
+    const scratch: *[format.page_size]u8 = @ptrCast(buffer[1..][0..format.page_size].ptr);
+    const view = try reader.loadPage(pointer, scratch);
+    try std.testing.expect(view.rawTimestamps() == null);
+    try std.testing.expect(view.rawValues() == null);
+    for ([_]i64{ -11, -10, -5, 0, 5, 10, 11 }) |target| {
+        try expectLookupPoint(referenceLookup(&.{ -10, 0, 10 }, &.{ -0.0, 0, 1.5 }, target, .predecessor, null), lookupPagePoint(view, target, .predecessor));
+        try expectLookupPoint(referenceLookup(&.{ -10, 0, 10 }, &.{ -0.0, 0, 1.5 }, target, .successor, null), lookupPagePoint(view, target, .successor));
+        try checkLookupTarget(&reader, &.{ -10, 0, 10 }, &.{ -0.0, 0, 1.5 }, target);
+    }
+    const mutable = try temporary.dir.openFile("generic.ctdb", .{ .mode = .read_write });
+    defer mutable.close();
+    // Warm reads must not suppress authentication when generic bytes mutate.
+    try mutable.pwriteAll(&.{0xff}, pointer.offset + format.page_header_size);
+    try std.testing.expectError(error.ChecksumMismatch, reader.lookupPrepared(handle, 0, .exact, null));
+    try mutable.pwriteAll(view.bytes, pointer.offset);
+    // A valid identity does not establish series identity, even for missing queries.
+    node.series_id += 1;
+    var encoded: [format.index_node_size]u8 = undefined;
+    try index.encode(&node, &encoded);
+    try mutable.pwriteAll(&encoded, series_entry.root.offset);
+    series_entry.root.identity = checksum.calculate(&encoded);
+    try std.testing.expectError(error.InvalidDatabase, reader.lookupPrepared(handle, -11, .predecessor, null));
+    try std.testing.expectError(error.InvalidDatabase, reader.lookupPrepared(handle, 11, .successor, 0));
+}
+
+test "temporal lookup validates cached page against each authenticated index entry" {
+    var temporary = std.testing.tmpDir(.{});
+    defer temporary.cleanup();
+    const file = try temporary.dir.createFile("cached.ctdb", .{ .read = true });
+    var writer = try Appender.createOn(std.testing.allocator, file, .raw);
+    defer writer.abort();
+    try writer.append("signal", -10, 1);
+    try writer.checkpoint(false);
+    try writer.append("signal", 10, 2);
+    try writer.checkpoint(false);
+    const pointer = writer.series.items[0].root.?;
+    var encoded: [format.index_node_size]u8 = undefined;
+    try std.testing.expectEqual(encoded.len, try file.preadAll(&encoded, pointer.offset));
+    var node = try index.decode(&encoded, pointer, writer.committed_size);
+    try std.testing.expectEqual(@as(u16, 2), node.count);
+    // Forge a valid index identity with conflicting summaries for one page.
+    node.entries[1].pointer = node.entries[0].pointer;
+    try index.encode(&node, &encoded);
+    try file.pwriteAll(&encoded, pointer.offset);
+    const path = try temporary.dir.realpathAlloc(std.testing.allocator, "cached.ctdb");
+    defer std.testing.allocator.free(path);
+    var reader = try Reader.open(std.testing.allocator, path);
+    defer reader.close();
+    const handle = try reader.prepare("signal");
+    // Supply the forged authenticated manifest edge before the first traversal.
+    reader.series.items[handle.index].root.identity = checksum.calculate(&encoded);
+    try expectLookupPoint(.{ .timestamp = -10, .value = 1 }, try reader.lookupPrepared(handle, -10, .exact, null));
+    inline for (std.meta.tags(LookupMode)) |mode| {
+        try std.testing.expectError(error.InvalidDatabase, reader.lookupPrepared(handle, 10, mode, null));
+    }
 }
 
 // Build and re-sign the complete fixture before opening any mapped reader.
