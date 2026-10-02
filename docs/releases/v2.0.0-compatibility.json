@@ -1,0 +1,141 @@
+{
+  "schema_version": 1,
+  "record_type": "chronotail.released-old-native.static-verification",
+  "finalized": true,
+  "release": {
+    "repository": "hamzaplojovic/chronotail",
+    "tag": "v2.0.0",
+    "url": "https://github.com/hamzaplojovic/chronotail/releases/tag/v2.0.0",
+    "id": 391006534,
+    "published_at": "2026-09-17T19:36:13Z",
+    "annotated_tag_object_sha": "a2c5dd49634a80ee10ac656f84039dd30140e723",
+    "source_commit_sha": "ddb8109bc97db3d9932b0beca67aac8f6c016646",
+    "source_tree_sha": "3aa0d22c530016a45fb1a7f907ad4a226bdf022f"
+  },
+  "bundle": {
+    "id": 570951630,
+    "name": "chronotail-2.0.0-macos-aarch64.tar.gz",
+    "size": 403778,
+    "digest": "sha256:148ba6f47fb31af1470bd95e6cb0691d39cc0e0f8a056bd3ed420dcc90fcfe34",
+    "browser_download_url": "https://github.com/hamzaplojovic/chronotail/releases/download/v2.0.0/chronotail-2.0.0-macos-aarch64.tar.gz",
+    "sha256": "148ba6f47fb31af1470bd95e6cb0691d39cc0e0f8a056bd3ed420dcc90fcfe34"
+  },
+  "checksums_asset": {
+    "id": 570951633,
+    "name": "SHA256SUMS",
+    "size": 104,
+    "digest": "sha256:c4113b737b144cb9b72142148bdb2ba6517af760a53314ded8ae5421d071609c",
+    "browser_download_url": "https://github.com/hamzaplojovic/chronotail/releases/download/v2.0.0/SHA256SUMS"
+  },
+  "critical_members_sha256": {
+    "bin/chronotail": "a5eff8989193e9b318ac61800c74a4221e2f59df9a4ebe9f274fddbfdf2bc95c",
+    "lib/libchronotail.a": "6ea9bdf0ef6e0ad47b0223e2908d5a4e6b4e713ed45c9f1471a5f713f947baed",
+    "lib/libchronotail.dylib": "08ef269edc7b26bac6a011dd852144cb1ccc317e9bb69190e0c802d0622a3875",
+    "include/chronotail.h": "91d7e0459fb1e8639c5064333c5d45c2dbf2367c25ceeb9fbb25a9bad39e8c5e",
+    "python/chronotail-2.0.0-py3-none-macosx_11_0_arm64.whl": "654d77bdc0590b2430c8b95ffd49de4d39cb91b18dbcad27b735fc34595afbb8"
+  },
+  "wheel": {
+    "member": "python/chronotail-2.0.0-py3-none-macosx_11_0_arm64.whl",
+    "version": "2.0.0",
+    "tag": "py3-none-macosx_11_0_arm64",
+    "native_member": "chronotail/_native/libchronotail.dylib",
+    "native_sha256": "08ef269edc7b26bac6a011dd852144cb1ccc317e9bb69190e0c802d0622a3875",
+    "python_source_sha256": "c1d4a87bbc5e3f481ea485e785a168fbf4ceb1b36cfecd22b7aececd6c8c76c9",
+    "RECORD_verified": true
+  },
+  "native": {
+    "member": "lib/libchronotail.dylib",
+    "sha256": "08ef269edc7b26bac6a011dd852144cb1ccc317e9bb69190e0c802d0622a3875",
+    "architecture": "ARM64",
+    "thin_macho": true,
+    "cputype": "0x100000c",
+    "filetype": 6,
+    "ABI_version_source_and_instruction_inspection": 2,
+    "ct_export_count": 18,
+    "ct_exports": [
+      "ct_abi_version",
+      "ct_aggregate",
+      "ct_aggregate_prepared",
+      "ct_append",
+      "ct_borrow_raw_page",
+      "ct_checkpoint",
+      "ct_checkpoint_with_durability",
+      "ct_close",
+      "ct_cursor_init",
+      "ct_cursor_next",
+      "ct_error_string",
+      "ct_open_reader",
+      "ct_open_writer",
+      "ct_prepare_append",
+      "ct_prepare_series",
+      "ct_range",
+      "ct_range_prepared",
+      "ct_refresh"
+    ]
+  },
+  "header": {
+    "member": "include/chronotail.h",
+    "sha256": "91d7e0459fb1e8639c5064333c5d45c2dbf2367c25ceeb9fbb25a9bad39e8c5e",
+    "matches_tagged_source": true
+  },
+  "source_files": {
+    "build.zig.zon": {
+      "git_blob_sha": "866eb42b7aa452ebe08a19016dc95be47ef2e22f",
+      "sha256": "26897a851881b85a6e8e9d3874c91e6323600151c5004549d5cb105392c28fd3",
+      "api_download_url": "https://raw.githubusercontent.com/hamzaplojovic/chronotail/ddb8109bc97db3d9932b0beca67aac8f6c016646/build.zig.zon"
+    },
+    "include/chronotail.h": {
+      "git_blob_sha": "71498370c1327e1fd696659298af0353273a77c2",
+      "sha256": "91d7e0459fb1e8639c5064333c5d45c2dbf2367c25ceeb9fbb25a9bad39e8c5e",
+      "api_download_url": "https://raw.githubusercontent.com/hamzaplojovic/chronotail/ddb8109bc97db3d9932b0beca67aac8f6c016646/include/chronotail.h"
+    },
+    "python/pyproject.toml": {
+      "git_blob_sha": "dd5d477819d3bfb8c5f5cba27813d6e9400ba30b",
+      "sha256": "bdfc9a3bb1a77a7e74002242858a4601da2cab2c7175187265908dc8d35e2bc5",
+      "api_download_url": "https://raw.githubusercontent.com/hamzaplojovic/chronotail/ddb8109bc97db3d9932b0beca67aac8f6c016646/python/pyproject.toml"
+    },
+    "python/src/chronotail/__init__.py": {
+      "git_blob_sha": "6ca1f3c6fb5dd60fd656faab66b98847fac24cce",
+      "sha256": "c1d4a87bbc5e3f481ea485e785a168fbf4ceb1b36cfecd22b7aececd6c8c76c9",
+      "api_download_url": "https://raw.githubusercontent.com/hamzaplojovic/chronotail/ddb8109bc97db3d9932b0beca67aac8f6c016646/python/src/chronotail/__init__.py"
+    },
+    "src/c_api.zig": {
+      "git_blob_sha": "d2e41295d85b9ee940085d463c0d7e339d1655bf",
+      "sha256": "030b31528abc180982d8710a75d91010ceab0548109fe0c927d6b1ff3cb59500",
+      "api_download_url": "https://raw.githubusercontent.com/hamzaplojovic/chronotail/ddb8109bc97db3d9932b0beca67aac8f6c016646/src/c_api.zig"
+    },
+    "src/chronotail.zig": {
+      "git_blob_sha": "e29f30f250f53df2d304e27b80080639a46b8090",
+      "sha256": "0c1a0adb949f19a24770230601feaadc949c5034b8a9422080ac6e907595e2a7",
+      "api_download_url": "https://raw.githubusercontent.com/hamzaplojovic/chronotail/ddb8109bc97db3d9932b0beca67aac8f6c016646/src/chronotail.zig"
+    },
+    "src/internal/engine.zig": {
+      "git_blob_sha": "72c64bfa1bfbcdbfdd082732814c06232cc8534a",
+      "sha256": "d605cd1837afb9a991d5b1e4611d3117015ee7ff366d2b51e1b3f1842b4a667c",
+      "api_download_url": "https://raw.githubusercontent.com/hamzaplojovic/chronotail/ddb8109bc97db3d9932b0beca67aac8f6c016646/src/internal/engine.zig"
+    },
+    "src/internal/format.zig": {
+      "git_blob_sha": "35b66e547e30ac7906ac1576bf88fa75d6e5baf3",
+      "sha256": "58f052d9a4edc4c37dbcd7f0cadb618879f9b1601281b25722b5bfa6610e1771",
+      "api_download_url": "https://raw.githubusercontent.com/hamzaplojovic/chronotail/ddb8109bc97db3d9932b0beca67aac8f6c016646/src/internal/format.zig"
+    }
+  },
+  "checks": {
+    "GitHub_asset_digests_and_outer_SHA256SUMS": true,
+    "all_critical_internal_checksums": true,
+    "wheel_RECORD": true,
+    "wheel_version_and_platform": true,
+    "thin_ARM64_cli_and_dylib": true,
+    "wheel_and_bundle_native_identical": true,
+    "header_and_wheel_Python_match_tagged_source": true,
+    "exact_18_ct_exports": true
+  },
+  "full_provenance_receipt": "Coordinator retained CT-011-old-native-v2.0.0/source-and-symbol-verification.json",
+  "full_provenance_receipt_sha256": "14106142b5f0d12d6958853a535da2be0a3d05c7d2d1adb2fbd395f62d86aaf8",
+  "native_loaded_or_executed": false,
+  "runtime_complete": false,
+  "limitations": [
+    "Static released-byte/provenance preparation only. New installed wheel against this actual old dylib still requires native macOS ARM64 execution.",
+    "No pip/install/compiler/Go/native runs performed locally; prepared simple source smoke does not replace upcoming isolated installed-wheel gate."
+  ]
+}

@@ -31,6 +31,38 @@ jobs:
           PY
       - run: python3 scripts/setup-dev.py
       - run: ./scripts/dev.sh release
+      - name: Validate installed wheel against the released old ABI-v2 library
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          source scripts/dev-env.sh
+          mkdir -p .dev-results/old-abi-inputs
+          gh release download v2.0.0 --repo hamzaplojovic/chronotail \
+            --pattern chronotail-2.0.0-macos-aarch64.tar.gz \
+            --dir .dev-results/old-abi-inputs
+          version=$(python3 - <<'PY_VERSION'
+          import pathlib, re
+          print(re.search(r'\.version\s*=\s*"([^"]+)"', pathlib.Path('build.zig.zon').read_text()).group(1))
+          PY_VERSION
+          )
+          new_bundle="dist/chronotail-${version}-macos-aarch64.tar.gz"
+          new_sha=$(python3 - "$new_bundle" <<'PY_SHA'
+          import hashlib, pathlib, sys
+          print(hashlib.sha256(pathlib.Path(sys.argv[1]).read_bytes()).hexdigest())
+          PY_SHA
+          )
+          python3 scripts/check-old-abi.py \
+            --new-bundle "$new_bundle" --new-sha256 "$new_sha" --new-version "$version" \
+            --old-bundle .dev-results/old-abi-inputs/chronotail-2.0.0-macos-aarch64.tar.gz \
+            --old-sha256 148ba6f47fb31af1470bd95e6cb0691d39cc0e0f8a056bd3ed420dcc90fcfe34 \
+            --old-release-receipt docs/releases/v2.0.0-compatibility.json \
+            --require-links --output .dev-results/old-abi-compatibility.json
+          python3 - <<'PY_RECEIPT'
+          import json, pathlib
+          receipt = json.loads(pathlib.Path('.dev-results/old-abi-compatibility.json').read_text())
+          assert receipt['status'] == 'passed', 'old-ABI compatibility gate failed'
+          assert receipt['release_compatibility_complete'] is True, 'old-ABI compatibility evidence incomplete'
+          PY_RECEIPT
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: validated-release

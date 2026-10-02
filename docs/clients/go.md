@@ -9,7 +9,7 @@ target is macOS ARM64 with cgo enabled.
 Import the package from the repository module:
 
 ```bash
-go get github.com/hamzaplojovic/chronotail/v2@v2.1.0
+go get github.com/hamzaplojovic/chronotail/v2@v2.2.0
 ```
 
 ```go
@@ -26,17 +26,17 @@ DYLD_LIBRARY_PATH="$PWD/zig-out/lib" \
 go test ./clients/go
 ```
 
-For the 2.1.0 release archive, add its `lib/` directory to `CGO_LDFLAGS` at
+For the 2.2.0 release archive, add its `lib/` directory to `CGO_LDFLAGS` at
 build time and to `DYLD_LIBRARY_PATH` at execution time. The module contains
 the canonical header; the archive contains the native library. The package
 checks `ct_abi_version() == 2` before opening a handle.
 
 ## Write ordered batches
 
-The 2.2 development source adds temporal lookup and directly links
+The 2.2 source adds temporal lookup and directly links
 `ct_lookup`/`ct_lookup_prepared`. Build it with the matching header and native
 library; an ABI-version-2 number alone does not guarantee those symbols.
-The 2.1 installation above is the previous released surface. Linking new
+Earlier 2.1 packages are the previous surface. Linking new
 source against 2.1 or 2.0 libraries fails with a missing-symbol diagnostic;
 there is no dynamic dispatch or history-scan fallback. Old binaries that use
 only existing symbols remain compatible with the additive native library.
@@ -115,7 +115,7 @@ directly. Aggregates return count, minimum, maximum, sum, first, and last
 without materializing points. Empty aggregates have count and sum zero and NaN
 for the other values.
 
-## Temporal lookup (2.2 development)
+## Temporal lookup
 
 ```go
 age := uint64(1000) // Caller-defined timestamp units; inclusive.

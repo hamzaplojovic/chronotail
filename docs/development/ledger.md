@@ -104,3 +104,37 @@ The all-phase page intervention and identical-binary baseline self-control are
 planned separately. No production optimization, speedup or universal
 non-regression claim is supported by this stage. Additive Python streaming and
 Zig lookup remain on the next-release branch, outside the frozen 2.1 candidate.
+
+## 2026-10-02 — published 2.1 and integrated temporal clients
+
+[PR #9](https://github.com/hamzaplojovic/chronotail/pull/9) merged at
+`5d30b82870203e68c1ccc95f04e99ff40c787230`, with a tree identical to the
+independently reviewed native candidate. The annotated v2.1.0 tag targets that
+merge; [tag workflow37069132813](https://github.com/hamzaplojovic/chronotail/actions/runs/37069132813)
+completed full native gates and publication. Downloaded public assets matched
+validated tag artifacts, outer/internal checksums, wheel/native/source and notes.
+The public archive SHA256 is
+`ed1fc74e03af19c8d90e087ff5ff79c2cf9cc761762c4c203f68432490d0ea38`.
+Earlier failed native candidates remain retained and are not successful campaigns.
+
+[PR #10](https://github.com/hamzaplojovic/chronotail/pull/10) adds Zig lookup,
+[PR #11](https://github.com/hamzaplojovic/chronotail/pull/11) adds bounded Python
+streaming and [PR #12](https://github.com/hamzaplojovic/chronotail/pull/12)
+adds C/Go/Python parity. Each merged through the exact-reviewed-head helper
+after independent review and successful Required CI. Reconciled lookup source
+passed three local modes and 100 seeds/10M operations with zero invariants;
+the final client suite passed18 Python tests, Go vet/race, C lookup and C++
+header/link checks. A real Linux library built from exact v2.0 tagged source
+passed new Python import/existing APIs and explicit unsupported capabilities.
+These are source/development results, not final 2.2 artifact certification.
+
+The actual released v2.0 ARM64 archive is separately pinned at SHA256
+`148ba6f47fb31af1470bd95e6cb0691d39cc0e0f8a056bd3ed420dcc90fcfe34`;
+its old dylib SHA256 is
+`08ef269edc7b26bac6a011dd852144cb1ccc317e9bb69190e0c802d0622a3875`.
+Checksum/wheel/tag/source/export inspection is complete; the isolated installed
+new-wheel/old-library execution remains a native 2.2 release gate. Final native
+candidate validation, tag/publication and downloaded public checksums are pending.
+Chart implementation is separate future source work. Frozen reader controls
+remain unbuilt/unexecuted; six compressed deficits remain unresolved, without a
+speedup or universal non-regression claim.
