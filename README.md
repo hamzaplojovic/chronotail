@@ -6,8 +6,8 @@ Chronotail stores multiple named series in one portable `.ctdb` file. There is
 no server, SQL layer, background thread, or production runtime dependency. One
 writer appends while any number of readers query immutable committed snapshots.
 
-> Chronotail 2.1.0 is unreleased. The current source uses file format v7 and C
-> ABI v2, and is validated for macOS ARM64 with Zig 0.15.2.
+> Chronotail 2.1.0 uses file format v7 and C ABI v2. Native release support
+> is macOS ARM64 with Zig 0.15.2; Linux checks are development evidence.
 
 ![Chronotail architecture](docs/assets/architecture.svg)
 

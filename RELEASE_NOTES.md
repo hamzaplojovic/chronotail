@@ -1,4 +1,4 @@
-# Chronotail 2.1.0 — unreleased
+# Chronotail 2.1.0
 
 - Added an idiomatic Go client over C ABI v2 with batches, explicit durability,
   immutable snapshots, bounded range buffers, prepared series, cursors,
@@ -9,6 +9,27 @@
   `docs/clients`.
 - Release artifacts now include client sources and smoke-test both the bundled
   Python wheel and a standalone Go consumer.
+- Copied range reads now support unaligned generic-storage scratch while
+  retaining borrowed raw-view alignment requirements and required-count behavior.
+- Internal engine regressions run alongside public tests. Developer setup pins
+  tools and provides matching local/CI correctness, resource, and release gates.
+- Documentation validation checks local targets and anchors offline; resource
+  validation requires the exact declared workload identities and repetitions.
+- Native release smoke tests isolate the installed Python package's bundled
+  library from checkout overrides and inherited loader search paths.
+
+## Compatibility and release validation
+
+This release retains file format v7, C ABI v2, the Go major-version-2 module
+path, and the existing public APIs. Format-v6 databases require explicit
+migration to a separate v7 file. Native release support remains macOS ARM64;
+Linux CI is development evidence and does not expand platform support.
+
+The release workflow requires Debug, ReleaseSafe, ReleaseFast, language-client
+checks, a 1,000-seed/100M-operation simulator campaign, the complete resource
+matrix, and isolated native artifact smoke before publishing checksummed bundles.
+The maintenance/resource-control results are correctness and resource evidence;
+no speedup or universal absence of performance regressions is claimed.
 
 # Chronotail 2.0.0
 

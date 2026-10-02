@@ -1,7 +1,7 @@
 # Chronotail 3.0.0: single-file time-series leadership
 
 Status: ambitious proposal for review. No engine implementation has started.
-Current source: 2.1.0, unreleased. Proposed next major release: **3.0.0**.
+Current source: 2.1.0. Proposed next major release: **3.0.0**.
 This proposal replaces the earlier incremental optimization plan.
 
 ## Product goal
