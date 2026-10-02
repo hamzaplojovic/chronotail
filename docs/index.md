@@ -33,6 +33,11 @@ and gives readers immutable committed snapshots while one writer appends.
 
 ## Engineering references
 
+- [Development and maintenance](development/maintenance.md) — reproducible
+  setup, CI, specialist agents, profiling, reviewed merges, and release completion.
+- [Development ledger](development/ledger.md) — failures, decisions, and evidence.
+- [Workload coverage](development/workloads.md) — deterministic datasets and
+  failure dimensions, with explicit coverage gaps.
 - [Design rationale](design.md) — the whole-system redesign, TigerStyle lessons,
   rejected alternatives, tradeoffs, and future distribution seam.
 - [Internal performance profile](performance/internal-profile.md) — the complete

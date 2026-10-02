@@ -7,9 +7,9 @@ required.
 
 ## Reproduce the environment
 
-Install Python 3.9+, a C/C++ compiler, Git, tar, and xz. Linux cloud machines can
+Install Python 3.10+, a C/C++ compiler, Git, tar, and xz. Linux cloud machines can
 use `sudo dnf install -y gcc gcc-c++ clang`; GitHub runners already provide them.
-Run `./scripts/setup-dev.sh` (it installs the C toolchain on a fresh Amazon
+Run `./scripts/setup-dev.sh` (it installs Python 3.11 and the C toolchain when needed on a fresh Amazon
 Linux cloud workspace). Zig and Go are pinned by SHA-256 in
 `scripts/dev/toolchains.json` and installed under ignored `.tools/`.
 
