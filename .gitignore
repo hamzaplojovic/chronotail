@@ -24,3 +24,6 @@ bench/competitive/work/
 bench/competitive/__pycache__/
 tests/performance/results/
 *.egg-info/
+.tools/
+.context/
+.dev-results/

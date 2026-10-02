@@ -46,6 +46,14 @@ pub fn build(b: *std.Build) void {
     const run_tests = b.addRunArtifact(tests);
     const test_step = b.step("test", "Run Chronotail tests");
     test_step.dependOn(&run_tests.step);
+    const internal_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/internal/tests.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    test_step.dependOn(&b.addRunArtifact(internal_tests).step);
 
     const performance = b.addExecutable(.{
         .name = "chronotail-performance",
