@@ -111,7 +111,7 @@ array of interleaved `ct_point` values. These variants have the same inclusive
 range and truncation contract, but avoid separate column arrays and a later
 structure-of-arrays to array-of-structures conversion.
 
-## Temporal lookup (2.2 development)
+## Temporal lookup
 
 The additive `ct_lookup`/`ct_lookup_prepared` pair requires a matching native
 library exporting both symbols. It keeps ABI version 2 and existing layouts;
@@ -227,7 +227,7 @@ through the CLI and Zig API, not the C ABI.
 | `ct_range` | Copies a named-series prefix and returns total required capacity. |
 | `ct_prepare_series` | Resolves a series to a generation-bound handle. |
 | `ct_range_prepared` | Performs the copied range using a prepared handle. |
-| `ct_lookup` / `ct_lookup_prepared` | Selects a copied temporal point with explicit found and optional unsigned tolerance (2.2 development). |
+| `ct_lookup` / `ct_lookup_prepared` | Selects a copied temporal point with explicit found and optional unsigned tolerance (since 2.2). |
 | `ct_range_points` / `ct_range_points_prepared` | Copies directly into interleaved `ct_point` values. |
 | `ct_aggregate` / `ct_aggregate_prepared` | Computes count/min/max/sum/first/last. |
 | `ct_cursor_init` / `ct_cursor_next` | Streams a range through fixed caller buffers. |

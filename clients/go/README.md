@@ -18,7 +18,7 @@ go test ./clients/go
 Import the package as:
 
 ```bash
-go get github.com/hamzaplojovic/chronotail/v2@v2.1.0
+go get github.com/hamzaplojovic/chronotail/v2@v2.2.0
 ```
 
 ```go
@@ -47,7 +47,7 @@ The [complete Go guide and API reference](../../docs/clients/go.md) covers
 linking, snapshots, bounded buffers, prepared series, cursors, borrowed raw
 pages, error matching, durability, concurrency, and ownership.
 
-## Temporal lookup in 2.2 development
+## Temporal lookup
 
 `Reader.Lookup`, `Reader.LookupPrepared` and `Series.Lookup` return a copied
 `Point`, a found boolean and an error. Choose `LookupExact`,
@@ -57,7 +57,7 @@ distance or `*uint64` for an inclusive age limit in your timestamp units.
 Missing is found false; a zero value is found true. Timestamps and f64 bits
 remain exact across the full signed/unsigned domains.
 
-This source requires the matching 2.2 development header and native library
+This source requires the matching 2.2 header and native library
 exporting `ct_lookup` and `ct_lookup_prepared`; it does not link against the
-2.1 archive shown above. C ABI stays 2, but new optional symbols are not
+earlier 2.1 archive. C ABI stays 2, but new optional symbols are not
 guaranteed by the ABI number. Go uses direct cgo linking with no fallback.

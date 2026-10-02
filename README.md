@@ -6,7 +6,7 @@ Chronotail stores multiple named series in one portable `.ctdb` file. There is
 no server, SQL layer, background thread, or production runtime dependency. One
 writer appends while any number of readers query immutable committed snapshots.
 
-> Chronotail 2.1.0 uses file format v7 and C ABI v2. Native release support
+> Chronotail 2.2.0 uses file format v7 and C ABI v2. Native release support
 > is macOS ARM64 with Zig 0.15.2; Linux checks are development evidence.
 
 ![Chronotail architecture](docs/assets/architecture.svg)
@@ -67,6 +67,31 @@ with chronotail.Reader("metrics.ctdb") as db:
 
 See the [getting-started guide](docs/getting-started.md) for installation,
 complete CLI examples, and first programs in Go, Python, and Zig.
+
+## Last-known values and bounded history
+
+Applications choose their timestamp units and acceptable sample age. Lookup
+returns an original sample or a missing result; a measured zero remains data.
+
+```python
+from chronotail import LookupMode
+
+with chronotail.Reader("metrics.ctdb") as reader:
+    last = reader.lookup("cpu", 1005, LookupMode.PREDECESSOR, max_distance=2)
+    if last is not None:
+        timestamp, value = last
+        print(timestamp, value)
+    for timestamp, value in reader.iter_range("cpu", 0, 2000, batch_size=256):
+        print(timestamp, value)
+```
+
+Zig, C, Go and Python share inclusive exact/predecessor/successor/nearest
+selection, predecessor ties and full-domain unsigned distance limits. Python
+streaming reuses bounded buffers; retaining yielded results is the caller's
+choice. See [temporal lookup](docs/temporal-lookup.md),
+[language semantics](docs/temporal-lookup-clients.md) and the
+[Python guide](docs/clients/python.md) for snapshots, closing and older-library
+capability behavior.
 
 ## Language clients
 

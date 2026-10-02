@@ -7,7 +7,7 @@ runtime package is required.
 From an extracted release archive:
 
 ```bash
-python3 -m pip install python/chronotail-2.1.0-py3-none-macosx_11_0_arm64.whl
+python3 -m pip install python/chronotail-2.2.0-py3-none-macosx_11_0_arm64.whl
 ```
 
 ## Quick start
@@ -33,7 +33,7 @@ Writable `array('q')` and `array('d')` values use the direct buffer path.
 Readers hold immutable snapshots and adopt newer complete checkpoints only when
 `refresh()` is called.
 
-## Last-known values in 2.2 development
+## Last-known values
 
 ```python
 from chronotail import LookupMode
@@ -53,12 +53,12 @@ belong to their reader snapshot; changed refresh, close and wrong owner produce
 errors. Lookup requires a matching library exporting both new symbols; Python
 imports and existing APIs still work on older ABI2 libraries, with clear
 call-time `NotImplementedError` for unsupported lookup and no scanning fallback.
-The 2.1 wheel above does not contain this development surface.
+Temporal lookup is included in the 2.2 wheel; earlier wheels do not expose it.
 
 ## Stream a bounded range
 
-This API targets the next additive release and is available in development
-source checkouts. The frozen 2.1.0 wheel shown above does not include it.
+Streaming is included in the 2.2 wheel. The earlier 2.1 wheel does not expose
+this Python API.
 Streaming also requires a native ABI-v2 library exporting all three
 `ct_cursor_state_create`, `ct_cursor_state_next`, and `ct_cursor_state_destroy`
 symbols. Earlier ABI-v2 libraries, including 2.0.0, remain usable for existing

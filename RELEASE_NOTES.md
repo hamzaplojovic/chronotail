@@ -1,3 +1,36 @@
+# Chronotail 2.2.0
+
+- Added named and prepared temporal lookup in Zig, C, Go and Python for exact,
+  predecessor, successor and nearest original samples. Directions and optional
+  distance limits are inclusive, nearest ties choose the predecessor, and
+  distance arithmetic covers the complete signed timestamp/unsigned limit domains.
+- Missing results remain distinct from measured zero. C stages its point output
+  until a successful found result; Go and Python enforce prepared-handle owner,
+  snapshot and close checks.
+- Added lazy Python range streaming with reusable caller-sized buffers. Every
+  yield checks the captured snapshot, including buffered points; changed refresh
+  or close invalidates iteration and cursor cleanup is explicit.
+- Python binds new lookup and stateful-cursor capabilities independently and
+  optionally. Older ABI-v2 libraries retain imports and existing APIs; valid
+  unsupported calls raise NotImplementedError without history-scan fallback.
+- Added cross-language boundary/bit/output/lifetime regressions and isolated
+  installed telemetry examples with explicit sample age and bounded history.
+
+## Compatibility and release validation
+
+File format v7, C ABI v2, Go major-version-2 module and existing public layouts
+remain unchanged. Format-v6 migration still writes a separate v7 file. Go and
+C lookup consumers require the matching header/native library. Native artifact
+support remains macOS ARM64; Linux checks are development evidence.
+
+Release gates require three engine test modes, client checks, 1,000 simulator
+seeds/100M operations, the full resource matrix and isolated installed artifacts.
+An actual released v2.0 macOS library is the old-ABI compatibility input for the
+new installed Python wheel. Public bundles and checksums are verified after the
+matching annotated tag workflow publishes them. No speedup or universal absence
+of performance regressions is claimed; retained compressed-reader deficits and
+planned controls remain documented separately.
+
 # Chronotail 2.1.0
 
 - Added an idiomatic Go client over C ABI v2 with batches, explicit durability,

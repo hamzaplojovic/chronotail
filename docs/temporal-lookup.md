@@ -48,5 +48,6 @@ value decoding use the existing bounded restart cursors. First access may
 validate all records of a selected page, bounded by page geometry; lookup does
 not scan other history. Named and prepared calls allocate no memory after open.
 
-This API makes no new supported-platform or benchmark claim. C, Go, Python,
-batch lookup and interpolation are separate work.
+This API makes no new supported-platform or benchmark claim. C, Go and Python
+share the [same selection contract](temporal-lookup-clients.md). Batch lookup and
+interpolation remain separate work.

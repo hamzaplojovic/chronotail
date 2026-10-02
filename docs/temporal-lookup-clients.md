@@ -1,8 +1,7 @@
 # Temporal lookup client contract
 
-Status: contract frozen by manager; implementation in progress, native validation
-and independent review pending. These APIs target the 2.2
-next additive release; they are not part of the 2.1 release artifacts. Format v7,
+Status: implemented and independently reviewed for 2.2; final native release
+validation is a separate gate. These APIs are not part of the 2.1 release artifacts. Format v7,
 C ABI version 2 and existing public layouts/symbols remain unchanged.
 The frozen [Zig contract](temporal-lookup.md) is the semantic authority.
 
@@ -252,7 +251,7 @@ a new supported runtime fallback. Native calls must not retain caller storage.
 Manager exclusively schedules fresh engine modes/simulation if engine code is
 touched and native client/ABI suites for actual wrapper changes. Independent
 client/correctness/resource review binds exact final commits. Existing CI and
-prior native results do not certify this future implementation.
+prior native results do not certify a later release candidate.
 
 Installed-artifact validation must use isolated extracted bundles outside the
 checkout: compile a C/C++ consumer against packaged header/library, build/run
@@ -263,6 +262,6 @@ bits/tolerance behavior. Load an actual old ABI-v2 library for Python compatibil
 as well as pure stubs. Linux checks are development evidence; native macOS ARM64
 bundles remain the release boundary. No new platform or benchmark claim follows.
 
-Release 2.1 correctness/tooling merge and publication precede additive feature
-merges. Version/release metadata and installed artifacts must describe the next
-additive API accurately; no change to the frozen 2.1 candidate is proposed.
+The 2.1 release is published and its bytes remain frozen. The additive APIs
+are integrated in main; final 2.2 native validation, installed compatibility,
+matching tag and public assets remain release gates.

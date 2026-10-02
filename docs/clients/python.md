@@ -7,13 +7,13 @@ third-party runtime package dependency.
 Install the wheel from the extracted release archive:
 
 ```bash
-python3 -m pip install python/chronotail-2.1.0-py3-none-macosx_11_0_arm64.whl
+python3 -m pip install python/chronotail-2.2.0-py3-none-macosx_11_0_arm64.whl
 ```
 
-## Temporal lookup (2.2 development)
+## Temporal lookup
 
-The frozen 2.1 wheel above does not include this API. With matching 2.2
-development Python source and native library:
+Temporal lookup is included in the 2.2 package with its matching native library:
+earlier 2.1 wheels do not expose this API.
 
 ```python
 from chronotail import LookupMode
@@ -116,11 +116,10 @@ buffers when the initial 1,024-point capacity is insufficient.
 
 ### Stream an inclusive range
 
-The next additive release introduces
-`Reader.iter_range(series, start, end, *, batch_size=1024)`. Source checkouts with
-this API can stream individual `(timestamp, value)` tuples in strictly increasing
-timestamp order using the existing C ABI v2 stateful cursor. The frozen 2.1.0
-release wheel above does not include this API.
+Chronotail 2.2 includes
+`Reader.iter_range(series, start, end, *, batch_size=1024)`. It streams individual
+`(timestamp, value)` tuples in strictly increasing timestamp order using the
+existing C ABI v2 stateful cursor. Earlier 2.1 wheels do not expose this Python API.
 
 Streaming requires all three native stateful cursor symbols:
 `ct_cursor_state_create`, `ct_cursor_state_next`, and `ct_cursor_state_destroy`.
@@ -210,8 +209,8 @@ when their independent complete native lookup pair is unavailable. Invalid
 lookup mode/timestamp/distance domains raise `ValueError`; closed, stale and
 wrong-reader prepared handles raise `ChronotailError` before capability checks.
 
-Bounded streaming reads are available through `Reader.iter_range` on the next
-additive development line. In 2.2 development, `Reader.prepare` creates Python
+Bounded streaming reads are available through `Reader.iter_range`.
+`Reader.prepare` creates Python
 prepared handles for `lookup_prepared`. Borrowed raw-page views,
 fixed-resolution aggregate windows, full-file verification, and v6 migration
 remain Zig/C/CLI facilities.
@@ -230,7 +229,7 @@ independent readers in independent threads and keep one writer owner.
 | `ABI_VERSION` | Native ABI required by this package; currently `2`. |
 | `ChronotailError` | Native failure with status text and numeric code. |
 | `Aggregate` | Named tuple containing `count`, `minimum`, `maximum`, `sum`, `first`, and `last`. |
-| `LookupMode` | 2.2 development enum: `EXACT`, `PREDECESSOR`, `SUCCESSOR`, `NEAREST`; inclusive directions, predecessor ties. |
+| `LookupMode` | Enum: `EXACT`, `PREDECESSOR`, `SUCCESSOR`, `NEAREST`; inclusive directions, predecessor ties. |
 | `SeriesHandle` | Opaque owner/snapshot-bound prepared series created by `Reader.prepare`. |
 
 ### `Writer`
@@ -257,7 +256,7 @@ still runs; explicitly checkpoint before acknowledging disk-durable data.
 | `iter_range(series, start, end, *, batch_size=1024)` | Next additive release: yields inclusive-range points with bounded reusable buffers; requires all native stateful cursor symbols or raises `NotImplementedError`; explicitly close on early termination. |
 | `aggregate(series, start, end)` | Returns an `Aggregate` without materializing points. |
 | `prepare(series)` | Resolves an owner/snapshot-bound `SeriesHandle`; does not require lookup symbols. |
-| `lookup(series, timestamp, mode, *, max_distance=None)` | 2.2 development: returns an original copied tuple or `None`, with an inclusive optional u64 distance. |
+| `lookup(series, timestamp, mode, *, max_distance=None)` | Returns an original copied tuple or `None`, with an inclusive optional u64 distance. |
 | `lookup_prepared(series, timestamp, mode, *, max_distance=None)` | Same selection through this reader's prepared handle; rejects wrong owner, closed or stale handles. |
 | `refresh()` | Adopts a newer complete generation and returns whether it changed. |
 | `close()` | Releases the native mapping; repeated calls are harmless. |
