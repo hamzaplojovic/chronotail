@@ -10,6 +10,49 @@ Install the wheel from the extracted release archive:
 python3 -m pip install python/chronotail-2.1.0-py3-none-macosx_11_0_arm64.whl
 ```
 
+## Temporal lookup (2.2 development)
+
+The frozen 2.1 wheel above does not include this API. With matching 2.2
+development Python source and native library:
+
+```python
+from chronotail import LookupMode
+
+with chronotail.Reader("metrics.ctdb") as reader:
+    point = reader.lookup("pressure", observed_at, LookupMode.PREDECESSOR,
+                          max_distance=1000)
+    if point is not None:
+        sample_timestamp, pressure = point
+        display_observation(sample_timestamp, pressure)
+    else:
+        display_missing()
+```
+
+`LookupMode.EXACT` requires equality; predecessor/successor mean at or
+before/after. `NEAREST` chooses the closer original sample, with predecessor
+winning ties. The optional distance is inclusive in caller-defined timestamp
+units: `None` is unrestricted; zero requires equality. Missing is `None`,
+while zero-valued samples return a tuple. No interpolation or filling occurs.
+
+Require a `LookupMode` member, signed-64-bit integer timestamp and optional
+unsigned-64-bit integer distance. Booleans, floats, invalid enums and out-of-range
+integers raise `ValueError` before ctypes narrowing. The maximum distance is
+`2**64 - 1`, including the full min/max-i64 span. Timestamp and binary64 value
+bits remain exact; results survive reader refresh/close.
+
+`prepared = reader.prepare("pressure")` resolves an owner-bound `SeriesHandle`;
+`reader.lookup_prepared(prepared, timestamp, mode, max_distance=...)` has identical
+selection. A changed refresh stales handles; unchanged/failed refresh retains
+them. Closed/stale/wrong-reader requests raise `ChronotailError` before lookup.
+Unknown series and database failures are errors, even with tolerance zero.
+
+The two native lookup symbols form one optional complete capability, independent
+of streaming's three cursor symbols. Earlier ABI-v2 libraries, including 2.0,
+still import and support existing APIs and `Reader.prepare`. When either lookup
+symbol is absent, valid lookup calls raise clear `NotImplementedError`; there is
+no range or cursor fallback. Argument domains and handle lifetimes are validated
+before capability availability. See the [shared contract](../temporal-lookup-clients.md).
+
 ## Development install
 
 ```bash
@@ -162,9 +205,14 @@ invalid streaming batch size or bounds, or mismatched iterable lengths raise
 `ValueError`.
 Requesting `iter_range` with an ABI-v2 library missing the complete native
 stateful cursor capability raises `NotImplementedError` at call time.
+Valid `lookup`/`lookup_prepared` calls similarly raise `NotImplementedError`
+when their independent complete native lookup pair is unavailable. Invalid
+lookup mode/timestamp/distance domains raise `ValueError`; closed, stale and
+wrong-reader prepared handles raise `ChronotailError` before capability checks.
 
 Bounded streaming reads are available through `Reader.iter_range` on the next
-additive development line. Prepared reader handles, borrowed raw-page views,
+additive development line. In 2.2 development, `Reader.prepare` creates Python
+prepared handles for `lookup_prepared`. Borrowed raw-page views,
 fixed-resolution aggregate windows, full-file verification, and v6 migration
 remain Zig/C/CLI facilities.
 
@@ -182,6 +230,8 @@ independent readers in independent threads and keep one writer owner.
 | `ABI_VERSION` | Native ABI required by this package; currently `2`. |
 | `ChronotailError` | Native failure with status text and numeric code. |
 | `Aggregate` | Named tuple containing `count`, `minimum`, `maximum`, `sum`, `first`, and `last`. |
+| `LookupMode` | 2.2 development enum: `EXACT`, `PREDECESSOR`, `SUCCESSOR`, `NEAREST`; inclusive directions, predecessor ties. |
+| `SeriesHandle` | Opaque owner/snapshot-bound prepared series created by `Reader.prepare`. |
 
 ### `Writer`
 
@@ -206,6 +256,9 @@ still runs; explicitly checkpoint before acknowledging disk-durable data.
 | `range(series, start, end)` | Returns all inclusive-range points as `(timestamp, value)` tuples. |
 | `iter_range(series, start, end, *, batch_size=1024)` | Next additive release: yields inclusive-range points with bounded reusable buffers; requires all native stateful cursor symbols or raises `NotImplementedError`; explicitly close on early termination. |
 | `aggregate(series, start, end)` | Returns an `Aggregate` without materializing points. |
+| `prepare(series)` | Resolves an owner/snapshot-bound `SeriesHandle`; does not require lookup symbols. |
+| `lookup(series, timestamp, mode, *, max_distance=None)` | 2.2 development: returns an original copied tuple or `None`, with an inclusive optional u64 distance. |
+| `lookup_prepared(series, timestamp, mode, *, max_distance=None)` | Same selection through this reader's prepared handle; rejects wrong owner, closed or stale handles. |
 | `refresh()` | Adopts a newer complete generation and returns whether it changed. |
 | `close()` | Releases the native mapping; repeated calls are harmless. |
 

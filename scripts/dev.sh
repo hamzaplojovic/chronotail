@@ -37,9 +37,14 @@ clients() {
   local compiler=${CC:-cc}
   "$compiler" -std=c11 -Wall -Wextra -Werror clients/c/example.c \
     -Iinclude -Lzig-out/lib -lchronotail -o .dev-results/c-client
+  "$compiler" -std=c11 -Wall -Wextra -Werror clients/c/lookup_test.c \
+    -Iinclude -Lzig-out/lib -lchronotail -o .dev-results/c-lookup
+  "${CXX:-c++}" -std=c++17 -Wall -Wextra -Werror clients/c/lookup_header_test.cpp \
+    -Iinclude -Lzig-out/lib -lchronotail -o .dev-results/c-lookup-header
   local work
   work=$(mktemp -d "$CHRONOTAIL_ROOT/.dev-results/c-smoke.XXXXXX")
-  (cd "$work"; "$CHRONOTAIL_ROOT/.dev-results/c-client")
+  (cd "$work"; "$CHRONOTAIL_ROOT/.dev-results/c-client"; \
+    "$CHRONOTAIL_ROOT/.dev-results/c-lookup"; "$CHRONOTAIL_ROOT/.dev-results/c-lookup-header")
   rm -rf "$work"
 }
 

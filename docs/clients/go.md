@@ -33,6 +33,14 @@ checks `ct_abi_version() == 2` before opening a handle.
 
 ## Write ordered batches
 
+The 2.2 development source adds temporal lookup and directly links
+`ct_lookup`/`ct_lookup_prepared`. Build it with the matching header and native
+library; an ABI-version-2 number alone does not guarantee those symbols.
+The 2.1 installation above is the previous released surface. Linking new
+source against 2.1 or 2.0 libraries fails with a missing-symbol diagnostic;
+there is no dynamic dispatch or history-scan fallback. Old binaries that use
+only existing symbols remain compatible with the additive native library.
+
 ```go
 package main
 
@@ -106,6 +114,40 @@ log.Printf("count=%d min=%f max=%f sum=%f", summary.Count,
 directly. Aggregates return count, minimum, maximum, sum, first, and last
 without materializing points. Empty aggregates have count and sum zero and NaN
 for the other values.
+
+## Temporal lookup (2.2 development)
+
+```go
+age := uint64(1000) // Caller-defined timestamp units; inclusive.
+point, found, err := reader.Lookup("pressure", observedAt,
+    chronotail.LookupPredecessor, &age)
+if err != nil {
+    log.Fatal(err)
+}
+if found {
+    log.Printf("observed %d: %g", point.Timestamp, point.Value)
+}
+```
+
+`LookupExact`, `LookupPredecessor`, `LookupSuccessor` and `LookupNearest`
+select original stored points. Directions are inclusive, and nearest ties go
+to the predecessor. `nil` distance is unrestricted; a pointer to zero requires
+equality. All uint64 distances, including `math.MaxUint64` across the full
+int64 domain, are supported without signed narrowing. The pointer is copied
+synchronously and never retained.
+
+Inspect `found`: missing returns `Point{}, false, nil`; zero-valued samples
+return found true. Errors return `Point{}, false, err`. Values preserve
+`math.Float64bits`, including signed zero and NaN payloads. Copied results
+survive refresh and close; unknown series remains an error even with limit zero.
+
+Prepare with `reader.PrepareSeries`, then call
+`reader.LookupPrepared(series, timestamp, mode, limit)` or
+`series.Lookup(timestamp, mode, limit)`. Changed refresh invalidates the series;
+unchanged/failed refresh retains it. Closed owners return `ErrClosed`, stale
+series `ErrStaleSeries`, foreign readers `ErrWrongHandle`, and invalid modes
+`ErrInvalidArgument`. Methods are synchronous and not safe for concurrent calls.
+See the [shared contract](../temporal-lookup-clients.md).
 
 ## Bounded reads
 
@@ -238,6 +280,8 @@ and `ErrClosed` do not enter the native library.
 | `RangeInto(series, start, end, timestamps, values)` | Copies a prefix and returns total required capacity. |
 | `Aggregate(series, start, end)` | Returns `Aggregate` without copying points. |
 | `PrepareSeries(series)` | Returns a generation-bound `Series`. |
+| `Lookup(series, timestamp, mode, maxDistance)` | Returns copied Point/found/error with optional inclusive uint64 distance. |
+| `LookupPrepared(series, timestamp, mode, maxDistance)` | Same selection using this reader's prepared series. |
 | `Cursor(series, start, end)` | Returns a bounded persistent range cursor. |
 | `Refresh()` | Adopts a newer complete generation and reports whether it changed. |
 | `Close()` | Releases the mapping and invalidates borrowed state. |
@@ -247,6 +291,7 @@ and `ErrClosed` do not enter the native library.
 | Method | Contract |
 |---|---|
 | `Series.Range` / `RangeInto` | Prepared equivalents of reader range operations. |
+| `Series.Lookup` | Temporal lookup through its owner reader. |
 | `Series.Aggregate` | Prepared aggregate lookup. |
 | `Series.BorrowRawPage` | Returns snapshot-owned read-only slices or a typed status error. |
 | `Cursor.NextInto` | Copies the next bounded chunk and reports completion. |

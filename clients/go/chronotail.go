@@ -24,7 +24,17 @@ const (
 	DurabilityDisk   Durability = 1
 )
 
-// Point is one timestamp/value pair returned by Range.
+// LookupMode selects a stored point around a timestamp, without interpolation.
+type LookupMode uint8
+
+const (
+	LookupExact       LookupMode = 0
+	LookupPredecessor LookupMode = 1
+	LookupSuccessor   LookupMode = 2
+	LookupNearest     LookupMode = 3
+)
+
+// Point is one copied timestamp/value pair returned by a read.
 type Point struct {
 	Timestamp int64
 	Value     float64
@@ -221,6 +231,41 @@ func (r *Reader) PrepareSeries(series string) (*Series, error) {
 	return &Series{reader: r, epoch: r.epoch, handle: handle}, nil
 }
 
+// Lookup returns a stored point around timestamp. Directions are inclusive;
+// nearest ties choose the predecessor. nil maxDistance is unlimited; a non-nil
+// value is an inclusive unsigned distance in the caller's timestamp units.
+// Inspect found: a zero-valued point is distinct from an absent result.
+func (r *Reader) Lookup(series string, timestamp int64, mode LookupMode, maxDistance *uint64) (Point, bool, error) {
+	if err := r.ready(); err != nil {
+		return Point{}, false, err
+	}
+	if series == "" {
+		return Point{}, false, ErrEmptySeries
+	}
+	if mode > LookupNearest {
+		return Point{}, false, ErrInvalidArgument
+	}
+	return lookupNative(r.handle, series, timestamp, mode, maxDistance)
+}
+
+// LookupPrepared is Lookup through a series prepared by this reader.
+// Changed refresh invalidates the series; another reader's series is rejected.
+func (r *Reader) LookupPrepared(series *Series, timestamp int64, mode LookupMode, maxDistance *uint64) (Point, bool, error) {
+	if err := r.ready(); err != nil {
+		return Point{}, false, err
+	}
+	if err := series.ready(); err != nil {
+		return Point{}, false, err
+	}
+	if series.reader != r {
+		return Point{}, false, ErrWrongHandle
+	}
+	if mode > LookupNearest {
+		return Point{}, false, ErrInvalidArgument
+	}
+	return lookupPreparedNative(r.handle, series.handle, timestamp, mode, maxDistance)
+}
+
 // Cursor initializes bounded iteration over an inclusive range.
 func (r *Reader) Cursor(series string, start, end int64) (*Cursor, error) {
 	if err := r.ready(); err != nil {
@@ -264,6 +309,14 @@ type Series struct {
 	reader *Reader
 	epoch  uint64
 	handle nativeSeries
+}
+
+// Lookup selects a copied point through this series' owner reader.
+func (s *Series) Lookup(timestamp int64, mode LookupMode, maxDistance *uint64) (Point, bool, error) {
+	if s == nil || s.reader == nil {
+		return Point{}, false, ErrClosed
+	}
+	return s.reader.LookupPrepared(s, timestamp, mode, maxDistance)
 }
 
 // Range returns all points in the inclusive range through the prepared handle.

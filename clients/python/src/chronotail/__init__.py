@@ -3,6 +3,7 @@ from __future__ import annotations
 import ctypes
 import os
 import sys
+from enum import IntEnum
 from pathlib import Path
 from typing import Generator, Iterable, NamedTuple
 
@@ -55,6 +56,24 @@ class _CAggregate(ctypes.Structure):
     ]
 
 
+class LookupMode(IntEnum):
+    EXACT = 0
+    PREDECESSOR = 1
+    SUCCESSOR = 2
+    NEAREST = 3
+
+
+class _CPoint(ctypes.Structure):
+    _fields_ = [("timestamp", ctypes.c_int64), ("value", ctypes.c_double)]
+
+
+class _CSeriesHandle(ctypes.Structure):
+    _fields_ = [
+        ("index", ctypes.c_uint32), ("reserved", ctypes.c_uint32),
+        ("generation", ctypes.c_uint64),
+    ]
+
+
 _lib.ct_abi_version.restype = ctypes.c_uint32
 _lib.ct_error_string.argtypes = [ctypes.c_int]
 _lib.ct_error_string.restype = ctypes.c_char_p
@@ -87,6 +106,26 @@ _lib.ct_range.argtypes = [
     ctypes.POINTER(ctypes.c_size_t),
 ]
 _lib.ct_range.restype = ctypes.c_int
+_lib.ct_prepare_series.argtypes = [
+    _handle, ctypes.c_char_p, ctypes.c_size_t, ctypes.POINTER(_CSeriesHandle),
+]
+_lib.ct_prepare_series.restype = ctypes.c_int
+# Lookup is an optional complete pair, independent of stateful streaming.
+try:
+    _lib.ct_lookup
+    _lib.ct_lookup_prepared
+except AttributeError:
+    _has_lookup = False
+else:
+    _has_lookup = True
+    _lookup_tail = [
+        ctypes.c_int64, ctypes.c_uint8, ctypes.c_uint8, ctypes.c_uint64,
+        ctypes.POINTER(_CPoint), ctypes.POINTER(ctypes.c_uint8),
+    ]
+    _lib.ct_lookup.argtypes = [_handle, ctypes.c_char_p, ctypes.c_size_t] + _lookup_tail
+    _lib.ct_lookup.restype = ctypes.c_int
+    _lib.ct_lookup_prepared.argtypes = [_handle, _CSeriesHandle] + _lookup_tail
+    _lib.ct_lookup_prepared.restype = ctypes.c_int
 # Earlier ABI-v2 libraries do not export the opaque stateful cursor capability.
 try:
     _lib.ct_cursor_state_create
@@ -299,6 +338,35 @@ class Writer:
         )
 
 
+class SeriesHandle:
+    """Opaque prepared series belonging to one reader snapshot; use Reader.prepare."""
+
+    __slots__ = ("_reader", "_epoch", "_native")
+
+    def __init__(self):
+        raise TypeError("SeriesHandle is created by Reader.prepare")
+
+
+def _lookup_arguments(timestamp: int, mode: LookupMode, max_distance: int | None) -> None:
+    if not isinstance(mode, LookupMode):
+        raise ValueError("mode must be a LookupMode member")
+    if (not isinstance(timestamp, int) or isinstance(timestamp, bool)
+            or not -(1 << 63) <= timestamp < (1 << 63)):
+        raise ValueError("timestamp must be a signed 64-bit integer")
+    if max_distance is not None and (
+        not isinstance(max_distance, int) or isinstance(max_distance, bool)
+        or not 0 <= max_distance < (1 << 64)
+    ):
+        raise ValueError("max_distance must be None or an unsigned 64-bit integer")
+
+
+def _lookup_capability() -> None:
+    if not _has_lookup:
+        raise NotImplementedError(
+            "Reader.lookup/lookup_prepared require native ct_lookup and ct_lookup_prepared symbols"
+        )
+
+
 class Reader:
     def __init__(self, path: str | os.PathLike[str]):
         path_bytes = _encoded(path)
@@ -312,6 +380,70 @@ class Reader:
         if changed.value:
             self._iteration_epoch += 1
         return bool(changed.value)
+
+    def prepare(self, series: str) -> SeriesHandle:
+        """Prepare a series without requiring the optional lookup capability."""
+        if not isinstance(series, str):
+            raise ValueError("series must be a string")
+        self._lookup_ready()
+        series_bytes = series.encode("utf-8")
+        native = _CSeriesHandle()
+        _check(_lib.ct_prepare_series(
+            self._handle, series_bytes, len(series_bytes), ctypes.byref(native),
+        ))
+        prepared = object.__new__(SeriesHandle)
+        prepared._reader, prepared._epoch, prepared._native = self, self._iteration_epoch, native
+        return prepared
+
+    def lookup(
+        self, series: str, timestamp: int, mode: LookupMode,
+        *, max_distance: int | None = None,
+    ) -> tuple[int, float] | None:
+        """Select an original point; directions/limit are inclusive, ties go earlier.
+
+        None is missing. A zero distance accepts only equality; None distance is
+        unlimited. Timestamp units are caller-defined; value bits are preserved.
+        """
+        _lookup_arguments(timestamp, mode, max_distance)
+        if not isinstance(series, str):
+            raise ValueError("series must be a string")
+        self._lookup_ready()
+        _lookup_capability()
+        series_bytes = series.encode("utf-8")
+        point, found = _CPoint(), ctypes.c_uint8()
+        _check(_lib.ct_lookup(
+            self._handle, series_bytes, len(series_bytes), timestamp, mode.value,
+            int(max_distance is not None), 0 if max_distance is None else max_distance,
+            ctypes.byref(point), ctypes.byref(found),
+        ))
+        return (point.timestamp, point.value) if found.value else None
+
+    def lookup_prepared(
+        self, series: SeriesHandle, timestamp: int, mode: LookupMode,
+        *, max_distance: int | None = None,
+    ) -> tuple[int, float] | None:
+        """Lookup through this reader's prepared series; changed refresh stales it."""
+        _lookup_arguments(timestamp, mode, max_distance)
+        if not isinstance(series, SeriesHandle):
+            raise ValueError("series must be a SeriesHandle from Reader.prepare")
+        self._lookup_ready()
+        series._reader._lookup_ready()
+        if series._reader is not self:
+            raise ChronotailError("prepared series belongs to a different reader")
+        if series._epoch != self._iteration_epoch:
+            raise ChronotailError("prepared series is stale after refresh")
+        _lookup_capability()
+        point, found = _CPoint(), ctypes.c_uint8()
+        _check(_lib.ct_lookup_prepared(
+            self._handle, series._native, timestamp, mode.value,
+            int(max_distance is not None), 0 if max_distance is None else max_distance,
+            ctypes.byref(point), ctypes.byref(found),
+        ))
+        return (point.timestamp, point.value) if found.value else None
+
+    def _lookup_ready(self) -> None:
+        if not self._handle:
+            raise ChronotailError("reader is closed")
 
     def range(self, series: str, start: int, end: int) -> list[tuple[int, float]]:
         capacity = 1024
