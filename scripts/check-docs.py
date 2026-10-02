@@ -50,14 +50,23 @@ def without_blocks(text: str) -> str:
     result = []
     fence = None
     in_comment = False
+    inline_end = 0
+    offset = 0
     for line in text.splitlines(keepends=True):
+        line_start = offset
+        offset += len(line)
+        content = re.sub(r"^(?: {0,3}>[ \t]?)+", "", line)
+        marker = re.match(r"^ {0,3}(`{3,}|~{3,})(.*)$", content.rstrip("\r\n"))
         if fence is not None:
-            content = re.sub(r"^(?: {0,3}>[ \t]?)+", "", line)
-            marker = re.match(r"^ {0,3}(`{3,}|~{3,})(.*)$", content.rstrip("\r\n"))
             result.append(blank(line))
             if (marker and marker[1][0] == fence[0]
                     and len(marker[1]) >= len(fence) and not marker[2].strip()):
                 fence = None
+            continue
+        if (not in_comment and inline_end <= line_start and marker
+                and (marker[1][0] == "~" or "`" not in marker[2])):
+            fence = marker[1]
+            result.append(blank(line))
             continue
         # Comments inside fences are literal code; fences inside comments are
         # hidden. Track both states so neither can swallow later real links.
@@ -70,22 +79,50 @@ def without_blocks(text: str) -> str:
                 pieces.append(blank(line[cursor:end]))
                 in_comment = stop < 0
                 cursor = end
-            else:
-                stop = line.find("<!--", cursor)
-                end = len(line) if stop < 0 else stop
+            elif inline_end > line_start + cursor:
+                end = min(len(line), inline_end - line_start)
                 pieces.append(line[cursor:end])
                 cursor = end
-                in_comment = stop >= 0
+            elif line[cursor] == "\\":
+                pieces.append(line[cursor:cursor + 2])
+                cursor += 2
+            elif line[cursor] == "`":
+                opening_end, closing_end = code_span_end(text, line_start + cursor)
+                # A later fenced block cannot close an inline code span.
+                if closing_end is not None:
+                    for following in text[opening_end:closing_end].splitlines()[1:]:
+                        content = re.sub(r"^(?: {0,3}>[ \t]?)+", "", following)
+                        marker = re.match(r"^ {0,3}(`{3,}|~{3,})(.*)$", content)
+                        if marker and (marker[1][0] == "~" or "`" not in marker[2]):
+                            closing_end = None
+                            break
+                inline_end = closing_end or opening_end
+            elif line.startswith("<!--", cursor):
+                in_comment = True
+            else:
+                pieces.append(line[cursor])
+                cursor += 1
         line = "".join(pieces)
         # Quoted fences are common in examples; strip only the quote prefix.
         content = re.sub(r"^(?: {0,3}>[ \t]?)+", "", line)
         marker = re.match(r"^ {0,3}(`{3,}|~{3,})(.*)$", content.rstrip("\r\n"))
-        if marker and (marker[1][0] == "~" or "`" not in marker[2]):
+        if (inline_end <= line_start and marker
+                and (marker[1][0] == "~" or "`" not in marker[2])):
             fence = marker[1]
             result.append(blank(line))
         else:
             result.append(line)
     return "".join(result)
+
+
+def code_span_end(text: str, start: int) -> tuple[int, int | None]:
+    """Find a closing backtick run of exactly the opening run's length."""
+    end = start
+    while end < len(text) and text[end] == "`":
+        end += 1
+    delimiter = text[start:end]
+    closing = re.search(r"(?<!`)" + delimiter + r"(?!`)", text[end:])
+    return end, end + closing.end() if closing else None
 
 
 def without_inline_code(text: str) -> str:
@@ -111,15 +148,10 @@ def without_inline_code(text: str) -> str:
         if text[cursor] != "`":
             cursor += 1
             continue
-        end = cursor
-        while end < len(text) and text[end] == "`":
-            end += 1
-        delimiter = text[cursor:end]
-        closing = re.search(r"(?<!`)" + delimiter + r"(?!`)", text[end:])
-        if closing is None:
+        end, stop = code_span_end(text, cursor)
+        if stop is None:
             cursor = end
             continue
-        stop = end + closing.end()
         result[cursor:stop] = blank(text[cursor:stop])
         cursor = stop
     return "".join(result)

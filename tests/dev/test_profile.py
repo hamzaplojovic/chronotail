@@ -87,7 +87,7 @@ def query_matrix(points=100_000):
     return rows
 
 
-def full_matrix(points=100_000):
+def full_matrix(points=100_000, quick=False):
     """Realistic current harness identities, generated independently of validator tables."""
     rows = []
     for codec in ("raw", "compressed"):
@@ -98,14 +98,14 @@ def full_matrix(points=100_000):
         for value in ("constant", "smooth", "spiky", "random"):
             identity = dict(timestamp_pattern=timestamp, value_pattern=value)
             rows.append(result("append", "pattern", codec="compressed", **identity,
-                               series_count=1, batch_size=min(points, 500_000)))
+                               series_count=1, batch_size=points if quick else min(points, 500_000)))
             rows += [result("storage", "encoding", codec=codec, **identity,
                             operations=0, elapsed_ns=0, operations_per_second=0.0,
                             points_per_second=0.0, file_size=1_620_000,
                             bytes_per_point=16.2, raw_blocks=25)
                      for codec in ("raw", "compressed")]
     for count in (1, 4, 8, 64, 256):
-        rows.append(result("append", "series-cardinality", series_count=count))
+        rows.append(result("append", "series-cardinality", series_count=count, batch_size=1))
         rows += [result(name=name, series_count=count, width=1)
                  for name in ("series-lookup-point", "prepared-series-point")]
     rows += query_matrix(points)
@@ -117,9 +117,9 @@ def full_matrix(points=100_000):
         rows += [result("aggregate", "summary-tree", codec=codec, width=min(width, points))
                  for width in (100, 10_000, points)]
         rows.append(result("aggregate", "resolution-windows", codec=codec, width=points // 10))
-        rows.append(result("checkpoint", "unsynced", codec=codec, batch_size=4_096))
+        rows.append(result("checkpoint", "unsynced", codec=codec, batch_size=256 if quick else 4_096))
     rows.append(result(name="borrow-raw-page", points=0))
-    rows.append(result("checkpoint", "fsync", batch_size=4_096))
+    rows.append(result("checkpoint", "fsync", batch_size=256 if quick else 4_096))
     rows += control_matrix()
     rows += [allocation(name) for name in (
         "append-after-create", "warm-query", "prepared-query", "persistent-cursor",
@@ -153,11 +153,11 @@ class ProfileTests(unittest.TestCase):
         self.assertEqual(summary, profile.Summary(564, 188, 24, True))
 
     def test_quick_complete_matrix(self):
-        self.write([metadata(quick=True), *full_matrix()])
+        self.write([metadata(quick=True), *full_matrix(quick=True)])
         self.assertTrue(profile.validate(self.path).completeness_checked)
 
     def test_combined_quick_repetitions_from_profile_pair(self):
-        rows = full_matrix()
+        rows = full_matrix(quick=True)
         self.write([metadata(3, quick=True), *rows, *rows, *rows])
         self.assertEqual(profile.validate(self.path), profile.Summary(564, 188, 24, True))
         self.invalid([metadata(3, quick=True), *rows, *rows], "incomplete matrix")
@@ -224,6 +224,61 @@ class ProfileTests(unittest.TestCase):
         rows[-1] = rows[-2]
         self.invalid([metadata(only="control"), *rows], "repetitions")
 
+    def test_required_scalar_append_cannot_be_replaced_by_unexpected_batch(self):
+        rows = full_matrix()
+        scalar = next(row for row in rows if row["group"] == "append"
+                      and row["name"] == "batch" and row["codec"] == "raw"
+                      and row["batch_size"] == 1)
+        scalar["batch_size"] = 2
+        self.assertEqual(len(rows), 188)
+        self.invalid([metadata(), *rows], "incomplete matrix")
+
+    def test_same_count_replacements_must_match_exact_workload_keys(self):
+        cases = (
+            ("append", "batch", "codec", "none"),
+            ("append", "batch", "timestamp_pattern", "sparse"),
+            ("append", "batch", "value_pattern", "constant"),
+            ("append", "batch", "series_count", 2),
+            ("append", "batch", "batch_size", 4_093),
+            ("append", "pattern", "codec", "raw"),
+            ("append", "pattern", "batch_size", 50_000),
+            ("append", "series-cardinality", "series_count", 2),
+            ("storage", "encoding", "codec", "none"),
+            ("query", "series-lookup-point", "series_count", 2),
+            ("query", "range", "timestamp_pattern", "none"),
+            ("query", "range", "width", 2),
+            ("query", "cursor-full-range", "batch_size", 32),
+            ("aggregate", "resolution-windows", "width", 999),
+            ("checkpoint", "fsync", "batch_size", 256),
+            ("control-plane", "reader-open-many-series", "series_count", 2_048),
+            ("control-plane", "recover-trailing-data", "detail_a", 262_144),
+            ("allocation", "prepared-query", "codec", "compressed"),
+            ("concurrency", "parallel-readers", "series_count", 3),
+        )
+        for group, name, field, replacement in cases:
+            with self.subTest(group=group, name=name, field=field):
+                rows = full_matrix()
+                row = next(row for row in rows if (row["group"], row["name"]) == (group, name))
+                row[field] = replacement
+                self.assertEqual(len(rows), 188)
+                self.invalid([metadata(), *rows], "incomplete matrix")
+
+    def test_geometry_and_quick_checkpoint_identities_are_required(self):
+        rows = full_matrix()
+        page_batch = next(row for row in rows if row["group"] == "append"
+                          and row["name"] == "batch" and row["codec"] == "raw"
+                          and row["batch_size"] == 4_088)
+        page_batch["batch_size"] = 4_093
+        self.invalid([metadata(), *rows], "incomplete matrix")
+        rows = full_matrix(quick=True)
+        checkpoint = next(row for row in rows if row["group"] == "checkpoint")
+        checkpoint["batch_size"] = 4_096
+        self.invalid([metadata(quick=True), *rows], "incomplete matrix")
+
+    def test_unknown_geometry_requires_exploratory_opt_in(self):
+        self.invalid([metadata(engine_format=8), *full_matrix()], "known format-v7 geometry")
+        self.assertFalse(profile.validate(self.path, allow_partial=True).completeness_checked)
+
     def test_recovery_tail_sizes_are_distinct_identities(self):
         rows = control_matrix()
         self.write([metadata(3, only="control"), *rows, *rows, *rows])
@@ -235,6 +290,19 @@ class ProfileTests(unittest.TestCase):
         self.assertEqual(profile.validate(self.path).workloads, 64)
         self.write([metadata(points=10_000), *full_matrix(10_000)])
         self.assertEqual(profile.validate(self.path).results, 188)
+
+    def test_colliding_width_samples_cannot_be_replaced_by_other_known_width(self):
+        rows = query_matrix(10_000)
+        row = next(row for row in rows if row["name"] == "range" and row["width"] == 10_000)
+        row["width"] = 1_000
+        self.invalid([metadata(points=10_000, only="query"), *rows], "incomplete matrix")
+
+    def test_point_dependent_matrices_between_and_above_width_boundaries(self):
+        for points in (10_001, 50_000, 500_000, 1_000_001):
+            with self.subTest(points=points):
+                rows = full_matrix(points)
+                self.write([metadata(2, points=points), *rows, *rows])
+                self.assertEqual(profile.validate(self.path).results, 376)
 
     def test_old_partial_metadata_requires_only(self):
         self.write([metadata(), *control_matrix()])

@@ -7,6 +7,8 @@ harness metadata and complete matrix/repetition evidence are required. Use
 Old metadata omits the selected phase: assume a full run, or use --only to
 describe a historical phase run. New metadata may include only,
 expected_results (total rows), and expected_workloads (distinct identities).
+Complete coverage uses the current format-v7 harness's exact workload-key
+multiset, including pinned page geometry and clamped-width multiplicities.
 """
 
 from __future__ import annotations
@@ -36,35 +38,10 @@ ALLOCATION_NAMES = (
     "append-after-create", "warm-query", "prepared-query", "persistent-cursor",
     "borrow-raw-page", "aggregate-summary", "aggregate-windows", "unchanged-refresh",
 )
-# Emissions per repetition, including widths which can collapse at small --points.
-# Keep aligned with the format-1 harness, rather than the historical profile report.
-PHASES = {
-    "append": {("append", "batch"): 16, ("append", "pattern"): 12,
-               ("append", "series-cardinality"): 5},
-    "storage": {("storage", "encoding"): 24},
-    "query": {("query-profile", "first-touch"): 8, ("query", "range"): 48,
-              ("query", "range-count-only"): 8, ("query", "full-scan-count"): 8},
-    "read-api": {("query", "cursor-full-range"): 8,
-                 ("query", "range-into-count-only"): 2,
-                 ("query", "text-full-range"): 2, ("query", "borrow-raw-page"): 1},
-    "lookup": {("query", "series-lookup-point"): 5,
-               ("query", "prepared-series-point"): 5},
-    "aggregate": {("aggregate", "summary-tree"): 6,
-                  ("aggregate", "resolution-windows"): 2},
-    "checkpoint": {("checkpoint", "unsynced"): 2, ("checkpoint", "fsync"): 1},
-    "control": {("control-plane", "reader-open"): 1,
-                ("control-plane", "reader-open-many-series"): 1,
-                ("control-plane", "appender-open-many-series"): 1,
-                ("control-plane", "checkpoint-one-of-many-series"): 1,
-                ("control-plane", "refresh-unchanged"): 1,
-                ("control-plane", "verify"): 2,
-                ("control-plane", "refresh-changed"): 1,
-                ("control-plane", "recover-trailing-data"): 3},
-    "allocation": {("allocation", name): 1 for name in ALLOCATION_NAMES},
-    "concurrency": {("concurrency", "parallel-readers"): 6},
-}
+# Pinned v7 geometry: internal/format.zig and internal/page.zig. Completeness
+# must not infer records_per_block from an observed (possibly substituted) row.
+RECORDS_PER_BLOCK = (64 * 1024 - 128) // 16
 ONLY_CHOICES = ("all", "append", "checkpoint", "control", "query", "read-api", "lookup")
-FAMILIES = {family for phase in PHASES.values() for family in phase}
 U64_MAX = (1 << 64) - 1
 
 
@@ -198,19 +175,97 @@ def workload_key(row: dict) -> tuple:
     )
 
 
-def _multiplicity(key: tuple, points: int) -> int:
-    if key[:2] == ("query", "range"):
-        return sum(min(width, points) == key[7] for width in (1, 10, 100, 1_000, 10_000, 100_000))
-    if key[:2] == ("aggregate", "summary-tree"):
-        return sum(min(width, points) == key[7] for width in (100, 10_000, points))
-    return 1
+def expected_workloads(metadata: dict, scope: str = "all") -> Counter:
+    """Exact format-1/current-v7 harness key multiset, independent of results.
+
+    Mirror the harness's emitted identities and Result defaults, not historical
+    report totals. Counter addition retains duplicate widths after clamping;
+    counts are multiplied without iterating over the declared repetitions.
+    """
+    if metadata["engine_format"] != 7:
+        raise ValidationError("complete matrix requires known format-v7 geometry; "
+                              "use --allow-partial for other engine formats")
+    points = metadata["points"]
+    repetitions = metadata["repetitions"]
+    quick = metadata["quick"]
+    phases = {phase: Counter() for phase in (
+        "append", "storage", "query", "read-api", "lookup", "aggregate",
+        "checkpoint", "control", "allocation", "concurrency",
+    )}
+
+    def add(phase: str, group: str, name: str, **fields: object) -> None:
+        row = dict.fromkeys(STRING_FIELDS, "none")
+        row.update(group=group, name=name, series_count=0, batch_size=0, width=0, detail_a=0)
+        row.update(fields)
+        phases[phase][workload_key(row)] += repetitions
+
+    codecs = ("raw", "compressed")
+    cardinalities = (1, 4, 8, 64, 256)
+    for codec in codecs:
+        for batch_size in (1, 16, 64, 256, 1_000, RECORDS_PER_BLOCK, 4_096, 65_536):
+            add("append", "append", "batch", codec=codec, timestamp_pattern="dense",
+                value_pattern="smooth", series_count=1, batch_size=batch_size)
+    for timestamp in ("dense", "sparse", "irregular"):
+        for value in ("constant", "smooth", "spiky", "random"):
+            patterns = dict(timestamp_pattern=timestamp, value_pattern=value)
+            add("append", "append", "pattern", codec="compressed", **patterns,
+                series_count=1, batch_size=points if quick else min(points, 500_000))
+            for codec in codecs:
+                add("storage", "storage", "encoding", codec=codec, **patterns)
+    for count in cardinalities:
+        add("append", "append", "series-cardinality", codec="raw", series_count=count, batch_size=1)
+        for name in ("series-lookup-point", "prepared-series-point"):
+            add("lookup", "query", name, codec="raw", series_count=count, width=1)
+    for timestamp, value in (("dense", "smooth"), ("dense", "random"),
+                             ("sparse", "spiky"), ("irregular", "smooth")):
+        for codec in codecs:
+            patterns = dict(codec=codec, timestamp_pattern=timestamp, value_pattern=value)
+            add("query", "query-profile", "first-touch", **patterns, width=100)
+            for width in (1, 10, 100, 1_000, 10_000, 100_000):
+                add("query", "query", "range", **patterns, width=min(width, points))
+            add("query", "query", "range-count-only", **patterns, width=100)
+            add("query", "query", "full-scan-count", **patterns, width=points)
+    checkpoint_batch = 256 if quick else 4_096
+    for codec in codecs:
+        for capacity in (16, 128, 1_024, 4_096):
+            add("read-api", "query", "cursor-full-range", codec=codec, batch_size=capacity)
+        for name in ("range-into-count-only", "text-full-range"):
+            add("read-api", "query", name, codec=codec)
+        for width in (100, 10_000, points):
+            add("aggregate", "aggregate", "summary-tree", codec=codec, width=min(width, points))
+        add("aggregate", "aggregate", "resolution-windows", codec=codec, width=points // 10)
+        add("checkpoint", "checkpoint", "unsynced", codec=codec, batch_size=checkpoint_batch)
+    add("read-api", "query", "borrow-raw-page", codec="raw")
+    add("checkpoint", "checkpoint", "fsync", codec="raw", batch_size=checkpoint_batch)
+    add("control", "control-plane", "reader-open", codec="compressed")
+    for name in ("reader-open-many-series", "appender-open-many-series", "checkpoint-one-of-many-series"):
+        add("control", "control-plane", name, codec="raw", series_count=1_024)
+    for name in ("refresh-unchanged", "refresh-changed"):
+        add("control", "control-plane", name)
+    for codec in codecs:
+        add("control", "control-plane", "verify", codec=codec)
+    for size in (64 * 1024, 1024 * 1024, 16 * 1024 * 1024):
+        add("control", "control-plane", "recover-trailing-data", detail_a=size)
+    for name in ALLOCATION_NAMES:
+        add("allocation", "allocation", name, codec="raw")
+    for readers in (1, 2, 4, 8, 16, 32):
+        add("concurrency", "concurrency", "parallel-readers", codec="raw", series_count=readers, width=100)
+
+    expected = Counter()
+    for phase in phases.values() if scope == "all" else (phases[scope],):
+        expected.update(phase)
+    return expected
+
+
+FAMILIES = {key[:2] for key in expected_workloads(
+    dict(engine_format=7, points=1_000_000, repetitions=1, quick=False),
+)}
 
 
 def validate(path: Path, only: str | None = None, *, allow_partial: bool = False) -> Summary:
     """Raise ValidationError with file/line context; never modify evidence."""
     metadata = None
     workloads: Counter = Counter()
-    families: Counter = Counter()
     results = allocation_results = 0
     try:
         with path.open(encoding="utf-8") as source:
@@ -232,7 +287,6 @@ def validate(path: Path, only: str | None = None, *, allow_partial: bool = False
                     elif row.get("type") == "result":
                         _result(row)
                         workloads[workload_key(row)] += 1
-                        families[(row["group"], row["name"])] += 1
                         results += 1
                         allocation_results += row["group"] == "allocation"
                     else:
@@ -256,20 +310,15 @@ def validate(path: Path, only: str | None = None, *, allow_partial: bool = False
         if only is not None and recorded_only is not None and only != recorded_only:
             raise ValidationError(f"{path}: --only conflicts with metadata only")
         scope = only or recorded_only or "all"
-        repetitions = metadata["repetitions"]
-        expected = Counter({family: count * repetitions
-                            for phase in (PHASES.values() if scope == "all" else (PHASES[scope],))
-                            for family, count in phase.items()})
-        if families != expected:
-            differences = [f"{'/'.join(family)}: got {families[family]}, expected {expected[family]}"
-                           for family in sorted(families.keys() | expected.keys())
-                           if families[family] != expected[family]]
-            raise ValidationError(f"{path}: incomplete matrix ({'; '.join(differences)})")
-        for key, count in workloads.items():
-            expected_count = repetitions * _multiplicity(key, metadata["points"])
-            if count != expected_count:
-                raise ValidationError(f"{path}: {'/'.join(map(str, key))}: got {count} repetitions, "
-                                      f"expected {expected_count}")
+        try:
+            expected = expected_workloads(metadata, scope)
+        except ValidationError as error:
+            raise ValidationError(f"{path}: {error}") from error
+        if workloads != expected:
+            differences = [f"{'/'.join(map(str, key))}: got {workloads[key]}, expected {expected[key]}"
+                           for key in sorted(workloads.keys() | expected.keys())
+                           if workloads[key] != expected[key]]
+            raise ValidationError(f"{path}: incomplete matrix/repetitions ({'; '.join(differences)})")
         for field, actual in (("expected_results", results), ("expected_workloads", len(workloads))):
             if field in metadata and metadata[field] != actual:
                 raise ValidationError(f"{path}: {field}={metadata[field]}, got {actual}")

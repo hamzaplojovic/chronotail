@@ -182,10 +182,41 @@ class DocsTest(unittest.TestCase):
         for text in (
             "```html\n<!-- unclosed comment in code\n```\n[broken](missing.md)\n",
             "<!--\n```\n-->\n[broken](missing.md)\n",
+            "```html <!-- literal fence info\n[code](hidden.md)\n```\n[broken](missing.md)\n",
         ):
             with self.subTest(text=text):
                 problems = self.check(text)
                 self.assertEqual([(p.line, p.target) for p in problems], [(4, "missing.md")])
+
+    def test_literal_comment_opener_in_inline_code_preserves_same_line_link(self) -> None:
+        for literal in ("`<!--`", "`` `<!--` ``"):
+            with self.subTest(literal=literal):
+                problems = self.check(f"{literal} [broken](missing.md)\n")
+                self.assertEqual([(p.line, p.target, p.reason) for p in problems], [
+                    (1, "missing.md", "path does not exist"),
+                ])
+                # Real comments following the code span still hide their links.
+                problems = self.check(f"{literal} <!-- [hidden](hidden.md) --> [broken](missing.md)\n")
+                self.assertEqual([(p.line, p.target) for p in problems], [(1, "missing.md")])
+
+    def test_literal_comment_opener_in_inline_code_preserves_following_line_links(self) -> None:
+        for literal in ("`<!--`", "`` `<!--` ``"):
+            with self.subTest(literal=literal):
+                problems = self.check(f"A literal {literal}\n[broken](missing.md)\n[also broken](absent.md)\n")
+                self.assertEqual([(p.line, p.target, p.reason) for p in problems], [
+                    (2, "missing.md", "path does not exist"),
+                    (3, "absent.md", "path does not exist"),
+                ])
+
+    def test_literal_comment_opener_in_multiline_code_preserves_visible_links(self) -> None:
+        problems = self.check("A `<!--\nliteral comment` [broken](missing.md)\n[also broken](absent.md)\n")
+        self.assertEqual([(p.line, p.target) for p in problems], [(2, "missing.md"), (3, "absent.md")])
+
+    def test_backtick_in_later_fence_does_not_close_inline_code(self) -> None:
+        problems = self.check(
+            "An unmatched ` delimiter\n```\n` <!-- literal code\n```\n[broken](missing.md)\n"
+        )
+        self.assertEqual([(p.line, p.target) for p in problems], [(5, "missing.md")])
 
     def test_reference_links_images_case_and_whitespace(self) -> None:
         self.write("docs/guide.md", "# Guide\n")
