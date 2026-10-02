@@ -212,6 +212,24 @@ class DocsTest(unittest.TestCase):
         problems = self.check("A `<!--\nliteral comment` [broken](missing.md)\n[also broken](absent.md)\n")
         self.assertEqual([(p.line, p.target) for p in problems], [(2, "missing.md"), (3, "absent.md")])
 
+    def test_literal_markup_backticks_do_not_pair_with_comment_code_opener(self) -> None:
+        self.write("docs/a`b.md", "# Existing target\n")
+        for prefix in ('[ok](a`b.md)', '<a href="a`b.md">ok</a>', '<a\n href="a`b.md">ok</a>'):
+            for literal in ("`<!--`", "`` `<!--` ``"):
+                with self.subTest(prefix=prefix, literal=literal):
+                    line = prefix.count("\n") + 1
+                    problems = self.check(
+                        f"{prefix} {literal} [broken](missing.md)\n[also broken](absent.md)\n"
+                    )
+                    self.assertEqual([(p.line, p.target, p.reason) for p in problems], [
+                        (line, "missing.md", "path does not exist"),
+                        (line + 1, "absent.md", "path does not exist"),
+                    ])
+                    problems = self.check(
+                        f"{prefix} {literal} <!-- [hidden](hidden.md) --> [broken](missing.md)\n"
+                    )
+                    self.assertEqual([(p.line, p.target) for p in problems], [(line, "missing.md")])
+
     def test_backtick_in_later_fence_does_not_close_inline_code(self) -> None:
         problems = self.check(
             "An unmatched ` delimiter\n```\n` <!-- literal code\n```\n[broken](missing.md)\n"

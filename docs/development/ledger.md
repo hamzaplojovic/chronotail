@@ -34,3 +34,26 @@ Conductor routines; the remaining observation-to-merge race is disclosed.
 An interrupted full profile was retained locally as incomplete evidence; the
 validator rejected it. It is not a timing or completeness claim. Final complete
 validation and native GitHub CI results are recorded on the setup PR.
+
+Completed evidence for [PR #5](https://github.com/hamzaplojovic/chronotail/pull/5):
+all 39 Zig tests passed in Debug, ReleaseSafe, and ReleaseFast; C/Python/Go
+clients passed, including Go race detection. The forced full simulator campaign
+(`CHRONOTAIL_SIM_SEED=1 CHRONOTAIL_SIM_SEEDS=1000
+CHRONOTAIL_SIM_OPERATIONS=100000 ./scripts/dev.sh simulate`) completed 100M
+operations with 1,934 crashes, 1,876 short writes, 1,877 failed writes, 5,970
+truncations, 5,961 corruptions, and zero invariant failures. Its seed
+configuration and raw log are retained in `.dev-results/`.
+
+At `85f68cc42b24c5ff39555092cdc959a79bea6ee3`,
+`./scripts/dev.sh profile full` completed all three passes: 564 results across
+188 workload identities and 24 allocation measurements. The strict validator
+accepted the complete matrix. Native macOS ARM64 artifact smoke and every
+GitHub CI job passed at that commit. These are correctness/resource-gate
+results, not evidence of a speedup or a new release platform.
+
+Review also exposed workload substitution that preserved family totals, and
+literal Markdown comment text masking later links. The gates now require exact
+workload identities and distinguish inline code from comments; failing
+synthetic cases are retained as developer-tool regressions. The next step is
+to choose a frozen 3.0 capability contract or measured bottleneck, rather than
+infer an optimization win from successful infrastructure checks.

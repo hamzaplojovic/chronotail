@@ -86,6 +86,10 @@ def without_blocks(text: str) -> str:
             elif line[cursor] == "\\":
                 pieces.append(line[cursor:cursor + 2])
                 cursor += 2
+            elif line.startswith("<!--", cursor):
+                in_comment = True
+            elif (literal_end := literal_markup_end(text, line_start + cursor)) is not None:
+                inline_end = literal_end
             elif line[cursor] == "`":
                 opening_end, closing_end = code_span_end(text, line_start + cursor)
                 # A later fenced block cannot close an inline code span.
@@ -97,8 +101,6 @@ def without_blocks(text: str) -> str:
                             closing_end = None
                             break
                 inline_end = closing_end or opening_end
-            elif line.startswith("<!--", cursor):
-                in_comment = True
             else:
                 pieces.append(line[cursor])
                 cursor += 1
@@ -125,6 +127,19 @@ def code_span_end(text: str, start: int) -> tuple[int, int | None]:
     return end, end + closing.end() if closing else None
 
 
+def literal_markup_end(text: str, start: int) -> int | None:
+    """Skip backticks in destinations and HTML attributes, retaining labels."""
+    if text[start:start + 2] == "](":
+        parsed = inline_destination(text, start + 2)
+        if parsed:
+            return parsed[1]
+    if text[start] == "<":
+        tag = re.match(r"<(?:[^>\"']|\"[^\"]*\"|'[^']*')*>", text[start:])
+        if tag:
+            return start + len(tag[0])
+    return None
+
+
 def without_inline_code(text: str) -> str:
     # A closing delimiter must have the same number of backticks as its opener.
     result = list(text)
@@ -133,18 +148,10 @@ def without_inline_code(text: str) -> str:
         if text[cursor] == "\\":
             cursor += 2
             continue
-        # Backticks in URLs and HTML attributes are filename characters, not
-        # code delimiters. Labels still pass through the code-span scanner.
-        if text[cursor:cursor + 2] == "](":
-            parsed = inline_destination(text, cursor + 2)
-            if parsed:
-                cursor = parsed[1]
-                continue
-        if text[cursor] == "<":
-            tag = re.match(r"<(?:[^>\"']|\"[^\"]*\"|'[^']*')*>", text[cursor:])
-            if tag:
-                cursor += len(tag[0])
-                continue
+        literal_end = literal_markup_end(text, cursor)
+        if literal_end is not None:
+            cursor = literal_end
+            continue
         if text[cursor] != "`":
             cursor += 1
             continue
